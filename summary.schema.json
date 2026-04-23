@@ -1,0 +1,113 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.com/summary-schema.json",
+  "title": "Multi-Agent Task Summary",
+  "description": "Schema for sub-agent output summary JSON",
+  "type": "object",
+  "required": ["task_id", "status", "completed_at"],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]*-\\d+$",
+      "description": "Task ID (e.g., T3-1, TASK-A1)"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["completed", "failed"],
+      "description": "Task execution status"
+    },
+    "result": {
+      "type": "string",
+      "description": "Human-readable result summary"
+    },
+    "decisions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Key architectural/design decisions made"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Files created by this task"
+    },
+    "next_agent_needs_know": {
+      "type": "string",
+      "description": "Critical information for dependent tasks"
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Warnings or known issues"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "Confidence level in the result"
+    },
+    "duration_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Execution duration in seconds"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Completion timestamp (ISO 8601)"
+    },
+    "error": {
+      "type": ["object", "null"],
+      "description": "Error information (only present when status=failed)",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["retryable", "fatal", "blocked"],
+          "description": "Error classification"
+        },
+        "code": {
+          "type": "string",
+          "description": "Error code (e.g., NETWORK_TIMEOUT, SYNTAX_ERROR)"
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable error message"
+        },
+        "stack": {
+          "type": "string",
+          "description": "Stack trace or full error details"
+        }
+      },
+      "required": ["type", "message"]
+    },
+    "retry_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of retry attempts made"
+    },
+    "partial_artifacts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Artifacts created before failure"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "completed" } } },
+      "then": {
+        "required": ["result", "artifacts"],
+        "properties": {
+          "error": { "type": "null" },
+          "retry_count": { "maximum": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "failed" } } },
+      "then": {
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "object", "not": { "type": "null" } }
+        }
+      }
+    }
+  ]
+}

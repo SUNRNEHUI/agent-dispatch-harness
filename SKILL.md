@@ -179,7 +179,12 @@ jq '[.tasks[] | select(.status == "pending") | select(
 - `master-prompt.md` - Master Agent 调度逻辑
 - `sub-prompt.md` - Sub Agent 执行规范
 - `TASKS.schema.json` - TASKS.json 完整 Schema
+- `summary.schema.json` - 子 Agent 摘要 Schema
+
+## 脚本工具
+
+- `scripts/init.sh` - 初始化调度器目录
 
 ---
 
-*Multi-Agent Dispatcher v1.0 | 2026-04-23*
+*Multi-Agent Dispatcher v1.1 | 2026-04-23*

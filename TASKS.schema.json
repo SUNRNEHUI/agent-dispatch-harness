@@ -21,6 +21,11 @@
       "format": "date-time",
       "description": "Last update timestamp"
     },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last update timestamp"
+    },
     "scheduler": {
       "type": "object",
       "required": ["max_parallel", "retry_policy"],
