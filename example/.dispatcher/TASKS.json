@@ -91,7 +91,7 @@
       "description": "实现密码重置页面",
       "status": "pending",
       "priority": 3,
-      "depends_on": ["T2-1"],
+      "depends_on": ["T2-2"],
       "parallel_group": "user",
       "created_at": "2026-04-23T10:00:00Z",
       "started_at": null,

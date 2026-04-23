@@ -103,23 +103,6 @@ cat > .dispatcher/TASKS.json << 'EOF'
 EOF
 ```
 
-### 启动任务
-
-```bash
-jq "(.tasks[] | select(.id == \"T4-2\") | .status) = \"running\" |
-    (.tasks[] | select(.id == \"T4-2\") | .started_at) = \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"" \
-  .dispatcher/TASKS.json > tmp.json && mv tmp.json .dispatcher/TASKS.json
-```
-
-### 完成任务
-
-```bash
-jq "(.tasks[] | select(.id == \"$TASK_ID\") | .status) = \"completed\" |
-    (.tasks[] | select(.id == \"$TASK_ID\") | .completed_at) = \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\" |
-    (.tasks[] | select(.id == \"$TASK_ID\") | .summary_file) = \"SUMMARY/$TASK_ID.json\"" \
-  .dispatcher/TASKS.json > tmp.json && mv tmp.json .dispatcher/TASKS.json
-```
-
 ### 扫描可运行任务
 
 ```bash
