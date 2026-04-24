@@ -1,92 +1,172 @@
-# multi-agent-dispatcher
+# Multi-Agent Dispatcher
 
-文件驱动型多代理任务调度框架 — 用于 Claude Code
+**File-Driven Multi-Agent Task Orchestration Framework for Claude Code**
 
-> 上下文窗口 = RAM（易失，有限）
-> 文件系统 = 磁盘（持久，无限）
-> → 重要的东西要写到磁盘。
+> **Context window = RAM** — volatile, finite. **Filesystem = Disk** — persistent, unlimited. When context is scarce, write to disk.
 
-## 核心特性
+---
 
-- **计划落盘**：任务写入 `task_plan.md`，不放在上下文中
-- **自动执行**：拆分任务后立即开始调度，无需用户确认
-- **上下文干净**：子 agent 只看到最小输入
-- **中断可恢复**：所有状态在文件中，断点后自动续传
+## The Problem
 
-## 工作流
+Large Language Models operate under a fundamental constraint: **context is finite and precious**. Every token spent on task state is a token not spent on reasoning. In long-running agentic workflows, this creates a compounding problem:
 
-```
-用户: "帮我计划一下做一个待办应用"
-  ↓
-主 Agent:
-1. 分析需求，拆分为任务
-2. 写入 task_plan.md
-3. 自动启动子 agent（并行执行）
-4. 监控完成状态，验证结果
-5. 继续调度下一批，直到全部完成
-6. 合并结果，向用户报告
-```
+| Without Persistence | With Persistence |
+|---------------------|------------------|
+| Task state lives in context | Task state lives on disk |
+| Lost on context overflow | Survives any interruption |
+| Grows linearly with complexity | Bounded by disk space |
+| Fragile, hard to audit | Transparent, easy to review |
 
-## 文件结构
+Existing approaches solve this with elaborate in-memory state management, complex orchestration schemas, or rigid pipeline definitions. We took a different approach: **treat the filesystem as the source of truth.**
 
-```
-skill/
-├── SKILL.md           # Skill 入口（161 行）
-├── master-prompt.md   # 主 Agent 调度逻辑（142 行）
-└── sub-prompt.md      # 子 Agent 执行规范（100 行）
+---
 
-项目/
-├── task_plan.md        # 任务计划（SSOT）
-├── findings.md         # 决策记录
-├── progress.md         # 执行进度
-└── src/                # 实际代码
-```
+## Core Principles
 
-## 任务状态机
+### 1. Task State Persistence
 
-```
-pending → running → completed/verified
-                    ↘ failed → retry (最多 3 次)
-```
+All task decomposition, scheduling decisions, and execution state live in human-readable markdown files — not in model context.
 
-| 状态 | 含义 |
-|------|------|
-| `[ ]` pending | 待执行 |
-| `[~]` running | 执行中 |
-| `[x]` verified | 已验证 |
+- `task_plan.md` — Master task list with dependency graph and status
+- `progress.md` — Real-time execution log
+- `findings.md` — Architectural decisions and learnings
 
-## 5 问恢复测试
+### 2. Autonomous Execution
 
-上下文压缩后，通过文件恢复：
+Once tasks are decomposed, the dispatcher operates without interruption. No confirmation prompts, no manual scheduling — the master agent coordinates sub-agents until completion.
 
-1. **我在哪？** → `task_plan.md` 里的 `[~]` 任务
-2. **我要去哪？** → `[ ]` 待执行任务
-3. **目标是什么？** → `task_plan.md` 顶部
-4. **学到了什么？** → `findings.md`
-5. **做了什么？** → `progress.md`
+### 3. Clean Sub-Agent Context
 
-## 子 Agent 输入
-
-每个子 agent 只收到最小输入：
-
+Each sub-agent receives only the minimal input it needs:
 ```json
 {
   "task_id": "T2-1",
-  "description": "创建 CSS 样式",
+  "description": "Implement CSS styling",
   "depends_on": [],
   "artifacts_expected": ["styles.css"],
   "working_dir": "/path/to/project"
 }
 ```
+No cross-contamination, no information leakage between agents.
 
-## 安装
+### 4. Crash Recovery
 
-将此文件夹放入 Claude Code 的 skills 目录：
+When context is compressed (or a session is interrupted), the agent recovers via a 5-question self-diagnosis:
 
-```bash
-cp -r multi-agent-dispatcher ~/.claude/skills/
+1. **Where am I?** → `[~]` tasks in `task_plan.md`
+2. **Where am I going?** → `[ ]` pending tasks
+3. **What's the goal?** → Top of `task_plan.md`
+4. **What have I learned?** → `findings.md`
+5. **What happened?** → `progress.md`
+
+---
+
+## Architecture
+
+```
+User Input
+    │
+    ▼
+┌─────────────┐
+│ Master Agent │  ← Decompiles → Writes task_plan.md
+└─────────────┘
+    │
+    ├── T1-1 ──┬──→ Sub-Agent-1
+    │
+    ├── T2-1 ──┼──→ Sub-Agent-2  (parallel execution)
+    │
+    └── T2-2 ──┴──→ Sub-Agent-3
+    │
+    ▼
+File System (SSOT)
+    │
+    ▼
+Master Agent ← Monitors → Sub-Agent Results
+    │
+    ▼
+User Report
+```
+
+### State Machine
+
+```
+pending → running → completed/verified
+                    ↘ failed → retry (max 3) → fatal
 ```
 
 ---
+
+## Why This Approach
+
+### Token Efficiency
+
+By offloading task state to files, the context window is reserved for high-value operations: reasoning, code generation, and decision-making. Sub-agents operate in isolated, minimal contexts.
+
+### Horizontal Scalability
+
+Tasks with no interdependencies execute in parallel. The dispatcher automatically batches and sequences based on dependency graphs.
+
+### Failure Isolation
+
+A sub-agent failure doesn't cascade. The state machine handles retries with exponential backoff, and fatal failures are logged for human review.
+
+### Auditability
+
+Every decision, every state change, every artifact is captured in plain text. You can reconstruct the entire execution history from the files.
+
+---
+
+## Quick Start
+
+```bash
+# Install
+cp -r multi-agent-dispatcher ~/.claude/skills/
+
+# Trigger (say this to Claude Code)
+"帮我计划一下做一个待办应用"
+```
+
+The dispatcher will:
+1. Decompose the request into tasks
+2. Write `task_plan.md` with the execution plan
+3. Auto-dispatch sub-agents in parallel
+4. Monitor and verify results
+5. Report completion
+
+---
+
+## File Structure
+
+```
+skill/
+├── SKILL.md              # Skill entry point
+├── master-prompt.md     # Master agent orchestration logic
+└── sub-prompt.md        # Sub-agent execution spec
+
+project/
+├── task_plan.md         # Task plan & dependency graph
+├── findings.md          # Architectural decisions
+├── progress.md          # Execution log
+└── src/                 # Generated artifacts
+```
+
+---
+
+## Comparison
+
+| Feature | Traditional | Multi-Agent Dispatcher |
+|---------|-------------|------------------------|
+| Task persistence | In-memory | File-based |
+| Context usage | High (grows with tasks) | Minimal (offloaded) |
+| Recovery after crash | Requires full restart | Auto-resume from files |
+| Parallel execution | Manual scheduling | Automatic dependency-aware |
+| Audit trail | Hidden in context | Human-readable files |
+| Sub-agent isolation | Often coupled | Guaranteed minimal input |
+
+---
+
+## Credits
+
+Built for Claude Code Agent Skills system.
 
 *v3.0 | 2026-04-23*
