@@ -2,140 +2,182 @@
 
 简体中文 | [English](README.md)
 
-**一个多智能体任务路由 skill：先判断 Direct / Lite / Full，再决定是否真的调度多个 agent。**
+Multi-Agent Dispatcher 是面向 AI 编码代理的 skill，用于把明确的多智能体请求路由到最合适的执行模式。它避免小任务过度调度，并为长任务、高风险任务、可续跑任务和需要证据验收的任务提供持久化 harness。
 
-> v5.2.1：适合公开分享的版本。它补充了对 `obra/superpowers` 的明确借鉴声明，收紧了 `SKILL.md` 的触发描述，并新增干净 runtime-only 打包脚本。
-
----
-
-## 它解决什么问题
-
-多 agent 任务最容易失败在这些地方：
-
-- 主 agent 在长上下文后丢失状态。
-- 子 agent 编辑范围重叠，最后合并冲突。
-- 子 agent 报告变成聊天记录，不能复用和验收。
-- worker 说完成了，但实际还有 stub、TODO、mock 或未验证路径。
-- 高风险操作没有停止点、回滚路径和证据。
-
-这个 skill 的核心不是“只要用户说多 agent 就开多个 agent”，而是先选模式：
-
-- **Direct：** 小任务、单文件改动、简单命令、窄范围 bug。单 agent 直接做并验证。
-- **Lite：** 中等任务，有清楚拆分面，但不需要完整持久化 harness。用短计划、清楚 owner、必要证据。
-- **Full：** 长任务、高风险、可续跑、多阶段、需要 evaluator、worktree 隔离或完整验收证据。才启用完整 harness。
-
-主 agent 永远负责模式判断、调度、合并、验证和最终结论。子 agent 只负责边界清楚的局部任务。
+当前版本：**v5.2.2** · 2026-05-28
 
 ---
 
-## 用户收益
+## 概览
 
-### 长任务可续跑
+多智能体执行只在任务存在清晰的独立责任边界，或需要持久化协同时才有明显价值。本 skill 将“用户授权多智能体”与“实际启动多智能体”分开处理：用户可以请求多智能体工作，但主代理仍需要判断调度是否真的能提升结果质量。
 
-Full Harness 会把任务状态写到 `<project>/workspace/<task-slug>/`，包括 spec、progress、worker report、acceptance registry、trace 等。后续 agent 可以从文件继续，而不是从聊天记录猜。
+主代理始终负责：
 
-### 不会过度调度
+- 选择执行模式
+- 定义目标、非目标、责任边界和验证要求
+- 在有必要时把边界清晰的任务分配给子代理
+- 合并结果并处理冲突
+- 在声明完成前验证验收证据
 
-显式说“多智能体”只代表授权评估，不代表一定开多个 agent。小任务会走 Direct。
-
-### 验收有证据
-
-worker 的“已完成”不是最终完成。最终完成需要测试、build、lint、浏览器验证、API readback、日志、截图、CI 或 evaluator 报告等证据。
-
-### 适合工程闭环
-
-Full Harness 包含：
-
-- Capability Gate：确认当前运行时真的有什么能力。
-- State Machine：记录任务状态，不靠聊天漂移。
-- Acceptance Registry：每条验收标准绑定证据。
-- Budget Circuit Breaker：时间、上下文、重试、成本超界时停下来。
-- Trace：记录关键决策、命令、证据和 stop reason。
+子代理只负责边界明确的执行、调研、审查或评估任务。最终验收责任仍由主代理承担。
 
 ---
 
-## 什么时候用
+## 核心能力
 
-当用户明确要求这些内容时使用：
+- **模式选择：** 在创建 worker 或 artifact 之前，先选择 Direct、Lite 或 Full。
+- **选择性调度：** 只有在任务具备清晰责任边界时才分配子代理。
+- **持久化状态：** 为长任务或可续跑任务保存 spec、进度、报告、状态和验收记录。
+- **证据化验收：** 用测试、构建输出、日志、浏览器检查、截图、CI、readback 或 evaluator 报告支持完成结论。
+- **运行时适配：** 将同一套协议映射到 Codex、Claude Code 或类似编码代理环境。
+- **干净打包：** 生成 runtime-only 安装包，避免把仓库文档、本地缓存、生成工作区或私有配置复制到运行目录。
+
+---
+
+## 执行模式
+
+| 模式 | 适用场景 | 行为 |
+| --- | --- | --- |
+| **Direct** | 任务较小、局部、顺序性强，或一个代理可以更高效完成。 | 不启动子代理，不创建编排 artifact。主代理直接执行并验证。 |
+| **Lite** | 任务有少量可拆分部分，但不需要完整持久化 harness。 | 主代理使用简短计划、明确 owner、紧凑报告和针对性验证。 |
+| **Full** | 任务较长、高风险、可续跑、需要并行、需要 evaluator，或适合 worktree 隔离。 | 主代理运行完整 harness，包括 capability 记录、状态文件、验收清单、trace、报告和验证 gate。 |
+
+明确的多智能体请求代表授权进行模式选择，不代表必须启动多个 worker。
+
+---
+
+## 适用场景
+
+当用户明确要求以下能力时使用本 skill：
 
 - 多智能体 / 多 Agent
 - sub-agent / 子 agent
+- 代理委托
 - 并行 agent
-- delegation / 委托
 - DAG 调度
+- 基于 worktree 的并行执行
 - 分头处理 / 分别派 / 拆给不同 agent
-- worktree-based parallel execution
-- 需要可续跑、可验收证据的长任务
+- 需要可续跑或证据验收的长任务协同
 
-不要因为任务“大”就自动使用。没有用户授权多 agent 时，最多简短建议，默认按普通单 agent 工作流推进。
+不要仅仅因为任务较大就使用本 skill。如果用户没有授权多智能体执行，应继续使用普通单代理工作流；当多智能体确实能降低风险时，可以简要提出建议。
 
 ---
 
-## 运行机制
+## 运行流程
 
 ```text
 Context Intake
 -> Mode Selection: Direct / Lite / Full
--> Execute the selected mode
-   Direct: 直接做、验证、汇报
-   Lite: 轻量拆分、短报告、必要证据
+-> Execute Selected Mode
+   Direct: 实现、验证、汇报
+   Lite: 协调边界清晰的任务片段、验证、汇报
    Full: capability gate、acceptance registry、state machine、trace、evaluator
 -> Merge / Handoff
 ```
+
+主代理应始终选择能够保证质量和验证的最轻模式。
+
+---
+
+## Full Harness 协议
+
+Full 模式用于需要强协同控制的任务。
+
+### 1. Mode Selection Gate
+
+主代理记录选择 Direct、Lite 或 Full 的原因。Full 模式通常由以下因素触发：独立责任面、长任务或可续跑范围、较高验证风险、evaluator 价值、隔离和回滚价值。
+
+### 2. Capability Gate
+
+分配任务前，主代理记录当前运行时真实可用的能力：
+
+- 真实子代理或委托机制
+- 文件系统写入权限
+- shell 和 sandbox 限制
+- worktree 支持
+- 浏览器或 UI 验证能力
+- 可承载协议规则的 instruction 文件或 hook
+- 外部服务、凭据和网络假设
+
+如果某项能力不可用，主代理必须选择回退路径，例如顺序执行、缩小范围、请求决策或进入停止状态。
+
+### 3. State Machine
+
+Full 模式使用明确状态推进：
+
+```text
+INTAKE -> GATED -> SPECIFIED -> DISPATCHED -> REPORTED -> EVALUATING -> ACCEPTED -> HANDED_OFF
+```
+
+停止状态同样是一等状态：
+
+```text
+BLOCKED -> NEEDS_DECISION -> FAILED
+```
+
+每次状态转换都应留下简短 trace，记录原因、owner、证据路径和下一个状态。
+
+### 4. Acceptance Registry
+
+验收标准以结构化记录保存。每条记录应包含：
+
+- 验收标准
+- owner
+- 所需证据
+- 状态：`pending`、`pass`、`fail`、`blocked` 或 `scoped_out`
+- 证据路径或命令结果摘要
+
+只要仍有必需验收项未验证，主代理就不能声明任务完成。
+
+### 5. Budget Circuit Breaker
+
+每个阶段应设置预算边界，包括时间、上下文、工具调用、重试、成本和外部副作用。当阶段超出预算时，主代理记录停止原因，并决定继续、拆分、缩小范围或请求决策。
+
+### 6. Trace
+
+Trace 记录续跑和审计所需的最小证据：
+
+- capability gate 结果
+- 状态转换
+- worker 报告路径
+- evaluator 结果
+- 预算停止或重试原因
+- 最终 acceptance registry
+
+聊天记录不应被视为持久化任务状态。
 
 ---
 
 ## 安装
 
-先生成干净 runtime 包：
+克隆仓库：
+
+```bash
+git clone https://github.com/SUNRNEHUI/multi-agent-dispatcher.git
+cd multi-agent-dispatcher
+```
+
+生成干净的 runtime 包：
 
 ```bash
 python3 scripts/package_skill.py --output /tmp/multi-agent-dispatcher-runtime --force
 ```
 
-再安装到 Codex：
+安装到 Codex：
 
 ```bash
 mkdir -p ~/.codex/skills/multi-agent-dispatcher
 rsync -a --delete /tmp/multi-agent-dispatcher-runtime/ ~/.codex/skills/multi-agent-dispatcher/
 ```
 
-使用示例：
-
-```text
-这个项目有前端、后端、测试三块，帮我用多个 agent 并行做，但要有验收证据。
-```
+runtime 包只包含 skill 运行时需要的文件。
 
 ---
 
-## 和 Superpowers 的关系
+## Runtime 包内容
 
-本项目是独立 skill，不依赖 Superpowers 运行。
-
-我们明确借鉴了 [obra/superpowers](https://github.com/obra/superpowers) 中一些成熟工程方法，包括：
-
-- test-first evidence
-- fresh-context subagents
-- review gates
-- worktree isolation
-- verification-before-completion
-
-但本项目不复制 Superpowers 的 skill 正文，也不要求用户安装 Superpowers 插件。这里的关系是：
-
-```text
-multi-agent-dispatcher = 总入口 / 路由器
-Superpowers-style methods = 可选的支持方法
-```
-
-也就是说，先由本 skill 判断 Direct / Lite / Full，再决定是否借用 TDD、review、worktree、verification 等方法。
-
----
-
-## 分享给别人应该包含什么
-
-分享 GitHub repo 时可以包含完整项目文档和工具。
-
-别人真正安装到 runtime skill 目录时，只需要：
+runtime 包包含：
 
 - `SKILL.md`
 - `master-prompt.md`
@@ -147,46 +189,180 @@ Superpowers-style methods = 可选的支持方法
 - `scripts/init_run.py`
 - `scripts/validate_report.py`
 
-不要把这些放进 runtime 安装目录：
+runtime 包会排除：
 
-- `.git`
 - `README.md`
+- `README.zh-CN.md`
 - `scripts/package_skill.py`
-- 本地 memory
+- `.git`
+- 生成的 workspace artifact
+- 本地 memory 文件
 - session 日志
-- 生成过的 workspace artifacts
-- `__pycache__`
-- 私人配置
-- API key / 凭据
-
-`scripts/package_skill.py` 会自动生成干净 runtime 包。
+- 缓存和字节码
+- 私有配置
+- 凭据或 API key
 
 ---
 
-## v5.2.1 更新内容
+## 使用示例
 
-- 明确声明本项目独立运行，并借鉴了 `obra/superpowers` 的工程方法。
-- 收紧 `SKILL.md` frontmatter，只写触发条件，避免把流程摘要塞进 metadata。
-- 新增 `scripts/package_skill.py`，用于生成干净 runtime-only 安装包。
-- README 默认提供中英双语说明。
+明确的多智能体请求：
 
-## v5.2.0 累计更新
+```text
+这个项目有前端、后端和测试三块。请在有价值的地方使用多个 agent，并提供验证证据。
+```
 
-- 保留 `multi-agent-dispatcher` 作为唯一入口。
-- 吸收 Superpowers-style 的 TDD、review、fresh-context、verification 思路。
-- 新增 Lite / Full 中的 testing 和 review gates。
-- 新增更多 eval cases，覆盖 TDD evidence、two-stage review、Superpowers interaction 和 clean sharing。
+带有多智能体措辞的小任务：
 
-## v5.1.0 累计更新
+```text
+如果需要可以用多智能体，帮我修正这个错别字。
+```
 
-- 新增 Direct / Lite / Full 三模式路由。
-- Full Harness 不再是默认路径，只在长任务、高风险、可续跑时启用。
-- 中小任务避免生成过多 artifacts。
+预期行为：主代理应选择 Direct 模式，因为调度开销没有必要。
+
+需要持久化协同的长任务：
+
+```text
+重构 checkout，更新 API contract，迁移测试，并验证 UI 流程。请使用子 agent，并让任务可以续跑。
+```
+
+预期行为：主代理根据风险、可用工具和验证要求选择 Lite 或 Full 模式。
 
 ---
 
-## 版本
+## Artifact 初始化
 
-**v5.2.1** · 2026-05-28
+Full 模式可以初始化持久化运行目录：
 
-上一公开版本：**v5.0.1** · 2026-05-27
+```bash
+python3 scripts/init_run.py \
+  --project-root /path/to/project \
+  --title "Checkout Refactor" \
+  --agents frontend,backend,tests
+```
+
+生成目录示例：
+
+```text
+/path/to/project/workspace/checkout-refactor/
+├── acceptance_registry.json
+├── capability_snapshot.md
+├── task_spec.md
+├── progress.md
+├── run_state.json
+├── trace.jsonl
+├── evaluator_report.md
+└── tasks/
+    ├── 1.1-frontend.md
+    ├── 1.2-backend.md
+    └── 1.3-tests.md
+```
+
+---
+
+## 报告校验
+
+在使用报告结论前，可以先校验报告结构：
+
+```bash
+python3 scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type subagent
+```
+
+支持的 artifact 类型：
+
+- `spec`
+- `progress`
+- `subagent`
+- `evaluator`
+
+如果 `acceptance_registry.json` 或 `run_state.json` 与被校验 artifact 位于同一目录，校验器也会检查这些协议文件。
+
+---
+
+## 仓库结构
+
+```text
+multi-agent-dispatcher/
+├── SKILL.md
+├── README.md
+├── README.zh-CN.md
+├── adapters/
+├── agents/
+├── references/
+├── scripts/
+├── templates/
+├── master-prompt.md
+└── sub-prompt.md
+```
+
+详细协议材料位于 `references/`，运行时适配说明位于 `adapters/`。
+
+---
+
+## 运行时适配
+
+协议本身不绑定特定运行时。适配文档说明如何在不同代理环境中落地：
+
+- [Codex adapter](adapters/codex.md)
+- [Claude Code adapter](adapters/claude-code.md)
+- [Harness protocol reference](references/harness-protocol.md)
+
+适配文档不改变协议，只把同一组 gate、artifact、证据规则和回退行为映射到可用的运行时控制能力上。
+
+---
+
+## 与 Superpowers 的关系
+
+本项目是独立实现，不依赖 Superpowers 运行。
+
+本项目在设计上参考了 [obra/superpowers](https://github.com/obra/superpowers) 中的部分工程实践。Superpowers 是 Jesse Vincent 创建的软件开发方法体系。Multi-Agent Dispatcher 借鉴的方向包括 test-first evidence、fresh-context sub-agents、review gates、worktree isolation 和 verification before completion。
+
+本项目不复制 Superpowers 的 skill 正文，也不要求安装 Superpowers 插件。二者关系如下：
+
+```text
+multi-agent-dispatcher = 路由与 harness 权威
+Superpowers-style methods = 可选的工程支持方法
+```
+
+模式选择始终先执行。只有当支持方法适合当前执行模式时，才会使用这些方法。
+
+---
+
+## 版本历史
+
+### v5.2.2
+
+- 将英文和中文 README 重写为正式的公开项目文档。
+- 明确项目定位、执行模式、安装流程、runtime 包边界和 Superpowers 借鉴声明。
+- 未改变运行协议。
+
+### v5.2.1
+
+- 新增中英文公开文档。
+- 明确声明对 Superpowers 相关工程方法的借鉴关系。
+- 新增 `scripts/package_skill.py`，用于生成干净的 runtime-only 安装包。
+- 在公开 README 中整理 Direct、Lite 和 Full 三种执行模式。
+- 扩展 eval cases，覆盖 TDD 证据、审查分离、Superpowers 关系和干净分享包。
+
+### v5.0.1
+
+- 在 capability check 和 DAG 创建前新增 right-sizing gate。
+- 明确多智能体措辞只代表授权评估，不代表自动调度。
+- 增加小任务跳过 worker、worktree 和 artifact 的指导。
+
+### v5.0.0
+
+- 将项目从流程说明升级为由主代理执行的 harness 协议。
+- 新增 capability snapshot、`run_state.json`、`acceptance_registry.json` 和 `trace.jsonl`。
+- 新增 evaluator 校验，以及 Codex 和 Claude Code 风格运行时适配。
+
+### v4.0.0
+
+- 引入闭环多智能体协议。
+- 新增 artifact 初始化、报告校验、角色边界、停止条件和 evaluator 模板。
+
+---
+
+## 许可证
+
+当前仓库尚未包含 license 文件。

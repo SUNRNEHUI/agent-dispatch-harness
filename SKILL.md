@@ -341,4 +341,4 @@ End with:
 
 ---
 
-*Multi-Agent Dispatcher v5.2.1 | 2026-05-28*
+*Multi-Agent Dispatcher v5.2.2 | 2026-05-28*
