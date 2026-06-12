@@ -1,15 +1,16 @@
 ---
-name: multi-agent-dispatcher
+name: agent-dispatch-harness
 description: >
   Use when the user explicitly asks for multi-agent work, delegated agents,
   sub-agents, parallel agents, DAG scheduling, worktree-based parallel execution,
   分头处理, 分别派, 拆给不同 agent, 多智能体, 多 Agent, or resumable/evidence-verified
-  long-running agent coordination.
+  long-running agent coordination, including references to Agent Dispatch Harness
+  or the former Multi-Agent Dispatcher name.
 ---
 
-# Multi-Agent Dispatcher
+# Agent Dispatch Harness
 
-Use this skill when the user asks for or clearly authorizes multiple agents, delegated work, parallel stages, or worktree isolation. Multi-agent work is usually a long-task engineering loop, but explicit multi-agent wording does not force dispatch.
+Use this skill when the user asks for or clearly authorizes multiple agents, delegated work, parallel stages, or worktree isolation. Multi-agent work is usually a long-task engineering loop, but explicit multi-agent wording does not force dispatch. Earlier releases used the name Multi-Agent Dispatcher; treat that as the same workflow during migration.
 
 This skill is the routing authority for multi-agent requests. Other planning, TDD, worktree, review, verification, or parallel-agent methods are supporting methods after this skill selects Direct Mode, Lite Orchestration, or Full Harness.
 
@@ -238,12 +239,18 @@ Use project tests and local instructions first. Do not invent meaningless tests 
 
 For code behavior changes in Lite Orchestration or Full Harness:
 
+- Choose the development lane before assigning work:
+  - Bugfix Lane for bounded defects: `references/bugfix-lane.md`.
+  - Feature-Spec Lane for planned behavior changes: `references/feature-spec-lane.md`.
 - Identify the relevant test, fixture, script, smoke check, or manual verification path before implementation.
 - Choose and record a gate mode before implementation: `strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`.
 - Use `strict_tdd` when the user, project instructions, phase gate, or assigned worker task explicitly requires TDD. Strict TDD requires RED command/result/failure reason before production code, GREEN command/result after implementation, and a refactor check after cleanup.
 - Use `test_first_evidence` for ordinary Lite/Full code behavior changes when a meaningful automated test exists or can be added at reasonable cost. The evidence must show a failing or gap-revealing test before production change, then passing verification after.
 - Use `substitute` only when a meaningful test-first path is unavailable or disproportionate. Record the no-test reason and the substitute check.
 - Use `not_applicable` only for docs-only, config-only, analysis-only, or non-behavior work.
+- Prefer wrapper-generated trace evidence for delegated TDD work. Run checks through `scripts/harness_test_run.py` when available, use `templates/tdd_trace.jsonl` as the trace format, and run `scripts/tdd_gate_check.py` before acceptance when the checker exists.
+- Use `scripts/tdd_gate_check.py --source-path <file>` for strict TDD cycles when physical file mtime evidence should corroborate RED-before-edit chronology.
+- Do not accept tests-after as TDD. If RED evidence is missing or occurs after implementation, record the broken chronology and either repair the gate, use an explicit substitute with a concrete no-test reason, or stop for a decision.
 
 For Full Harness implementation tasks:
 
@@ -337,14 +344,17 @@ End with:
 - Read `references/closed-loop-pattern.md` when designing or revising the orchestration loop.
 - Read `references/harness-protocol.md` when deciding which control layers should be hard protocol versus lightweight guidance.
 - Read `references/superpowers-integration.md` when deciding how to borrow TDD, parallel-agent, review, worktree, or verification methods without letting another workflow replace this skill's mode router.
+- Read `references/bugfix-lane.md` for bounded defects that need Investigate -> RED -> Fix -> Audit -> Quality Gate -> Done.
+- Read `references/feature-spec-lane.md` for planned features that need Spec -> optional isolation -> task-level TDD -> review gates -> E2E/program verification.
 - Read `references/tdd-gates.md` when a task changes code behavior, the user explicitly asks for TDD, or a worker report needs TDD/substitute verification acceptance.
 - Read `references/roles.md` when deciding whether to spawn explorers, workers, evaluators, or mergers.
 - Read `references/stop-conditions.md` when a task has high impact, ambiguous scope, repeated failures, or external side effects.
 - Read `references/eval_cases.md` when testing whether this skill triggers and behaves correctly.
 - Read `adapters/codex.md` or `adapters/claude-code.md` when the target runtime is known and runtime-specific controls matter.
-- Use `scripts/init_run.py` to create durable artifacts and `scripts/validate_report.py` to check reports.
+- Use `scripts/init_run.py` to create durable artifacts, `scripts/validate_report.py` to check reports, `scripts/harness_test_run.py` to generate wrapper-owned TDD trace events, and `scripts/tdd_gate_check.py` to validate `tdd_trace.jsonl` chronology when those runtime files are present.
 - Use `templates/task_spec.md`, `templates/progress_ledger.md`, `templates/subagent_task.md`, `templates/subagent_report.md`, and `templates/evaluator_report.md` when scripts are not suitable.
+- Use `templates/tdd_trace.jsonl` as the starting trace format for TDD runtime evidence when present.
 
 ---
 
-*Multi-Agent Dispatcher v5.3.0 | 2026-06-12*
+*Agent Dispatch Harness v5.6.0 | 2026-06-12*

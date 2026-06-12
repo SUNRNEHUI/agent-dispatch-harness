@@ -4,6 +4,22 @@
   "updated_at": "",
   "title": "",
   "artifact_dir": "",
+  "trace_path": "trace.jsonl",
+  "tdd_trace_path": "tdd_trace.jsonl",
+  "tdd_current_cycle_context": {
+    "task_id": "",
+    "gate_mode": "",
+    "phase": "",
+    "command": "",
+    "result": "",
+    "exit_code": null,
+    "trace_path": "tdd_trace.jsonl",
+    "stdout_tail": "",
+    "stderr_tail": "",
+    "retry_count": 0,
+    "max_retries": 3,
+    "updated_at": ""
+  },
   "status": "intake",
   "current_stage": "1",
   "stages": [
@@ -32,6 +48,7 @@
     "verification": [],
     "verification_gate": {
       "mode": "not_applicable",
+      "tdd_trace_path": "",
       "red_command": "",
       "red_result": "",
       "red_failure_reason": "",

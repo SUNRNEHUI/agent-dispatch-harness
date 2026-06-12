@@ -10,7 +10,7 @@ Superpowers is a complete software development methodology by Jesse Vincent. Thi
 
 ## Principle
 
-Use `multi-agent-dispatcher` to choose Direct Mode, Lite Orchestration, or Full Harness first. Use Superpowers-style methods only after the selected mode justifies them.
+Use `agent-dispatch-harness` to choose Direct Mode, Lite Orchestration, or Full Harness first. Use Superpowers-style methods only after the selected mode justifies them.
 
 Do not treat another planning, TDD, worktree, review, verification, or parallel-agent workflow as a competing top-level router.
 

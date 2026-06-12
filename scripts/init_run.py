@@ -64,6 +64,7 @@ def write_text(path: Path, content: str, force: bool) -> bool:
 def default_verification_gate() -> dict[str, str]:
     return {
         "mode": "not_applicable",
+        "tdd_trace_path": "",
         "red_command": "",
         "red_result": "",
         "red_failure_reason": "",
@@ -72,6 +73,23 @@ def default_verification_gate() -> dict[str, str]:
         "refactor_check": "",
         "substitute_check": "",
         "no_test_reason": "",
+    }
+
+
+def default_tdd_cycle_context() -> dict[str, object]:
+    return {
+        "task_id": "",
+        "gate_mode": "",
+        "phase": "",
+        "command": "",
+        "result": "",
+        "exit_code": None,
+        "trace_path": "tdd_trace.jsonl",
+        "stdout_tail": "",
+        "stderr_tail": "",
+        "retry_count": 0,
+        "max_retries": 3,
+        "updated_at": "",
     }
 
 
@@ -148,6 +166,7 @@ def main() -> int:
         "capability_snapshot.md",
         "acceptance_registry.json",
         "trace.jsonl",
+        "tdd_trace.jsonl",
         "run_state.json",
     ]
     generated_files.extend(item["task_path"] for item in task_items)
@@ -167,6 +186,7 @@ def main() -> int:
             "version": 1,
             "created_at": now,
             "title": args.title,
+            "tdd_trace_path": "tdd_trace.jsonl",
             "criteria": [
                 {
                     "id": "AC-001",
@@ -192,12 +212,16 @@ def main() -> int:
             ensure_ascii=False,
         )
         + "\n",
+        "tdd_trace.jsonl": "",
         "run_state.json": {
             "version": 1,
             "created_at": now,
             "updated_at": now,
             "title": args.title,
             "artifact_dir": str(artifact_dir),
+            "trace_path": "trace.jsonl",
+            "tdd_trace_path": "tdd_trace.jsonl",
+            "tdd_current_cycle_context": default_tdd_cycle_context(),
             "status": "intake",
             "current_stage": "1" if stage_items else "",
             "stages": stage_items,

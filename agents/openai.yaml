@@ -1,4 +1,4 @@
 interface:
-  display_name: "Multi-Agent Dispatcher"
-  short_description: "先判断 Direct/Lite/Full，只有需要时才多 Agent 调度"
-  default_prompt: "Use $multi-agent-dispatcher to first choose Direct, Lite, or Full mode. Work directly for small tasks, coordinate lightly for medium tasks, and only dispatch multiple agents with the full harness when parallelism, isolation, resumability, or evidence risk makes it worthwhile."
+  display_name: "Agent Dispatch Harness"
+  short_description: "先判断 Direct/Lite/Full，并在需要时用 trace 检证多 Agent 调度"
+  default_prompt: "Use $agent-dispatch-harness to first choose Direct, Lite, or Full mode. Work directly for small tasks, coordinate lightly for medium tasks, and only dispatch multiple agents with the full harness when parallelism, isolation, resumability, or evidence risk makes it worthwhile. When TDD evidence matters, prefer wrapper-generated trace events and validate chronology before accepting completion."

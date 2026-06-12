@@ -9,6 +9,9 @@
 ## Test-First Or Substitute Verification
 
 - Gate mode: not_applicable
+- Trace path:
+- Chronology summary:
+- First production edit:
 - Applicability reason:
 - RED command:
 - RED result:
@@ -18,6 +21,7 @@
 - Refactor check:
 - Substitute check:
 - No-test reason:
+- Unverified critical path:
 
 ## Evidence
 

@@ -1,1 +1,6 @@
 {"ts":"","event":"run_initialized","artifact_dir":"","title":"","agents":[]}
+{"ts":"","event":"tdd_gate_selected","task_id":"","mode":"strict_tdd|test_first_evidence|substitute|not_applicable","tdd_trace_path":"tdd_trace.jsonl","reason":""}
+{"ts":"","event":"tdd_red_observed","task_id":"","tdd_trace_path":"tdd_trace.jsonl","command":"","result":"fail","failure_reason":"","expected_failure":true}
+{"ts":"","event":"production_edit_observed","task_id":"","first_production_edit":{"path":"","line":"","ts":""},"after_red":true}
+{"ts":"","event":"tdd_green_observed","task_id":"","tdd_trace_path":"tdd_trace.jsonl","command":"","result":"pass"}
+{"ts":"","event":"review_gate_completed","task_id":"","review_type":"spec_compliance|code_quality","result":"PASS|FAIL|BLOCKED","evidence":""}

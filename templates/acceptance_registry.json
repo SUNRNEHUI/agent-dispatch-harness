@@ -2,6 +2,7 @@
   "version": 1,
   "created_at": "",
   "title": "",
+  "tdd_trace_path": "tdd_trace.jsonl",
   "criteria": [
     {
       "id": "AC-001",
@@ -12,6 +13,7 @@
       "owner": "main-agent",
       "verification_gate": {
         "mode": "not_applicable",
+        "tdd_trace_path": "",
         "red_command": "",
         "red_result": "",
         "red_failure_reason": "",

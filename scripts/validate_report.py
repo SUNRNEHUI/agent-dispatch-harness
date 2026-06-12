@@ -93,6 +93,7 @@ VALID_VERIFICATION_GATE_MODES = {
 }
 VERIFICATION_GATE_FIELDS = (
     "mode",
+    "tdd_trace_path",
     "red_command",
     "red_result",
     "red_failure_reason",
@@ -104,6 +105,9 @@ VERIFICATION_GATE_FIELDS = (
 )
 TDD_SECTION_LABELS = (
     "Gate mode",
+    "Trace path",
+    "Chronology summary",
+    "First production edit",
     "Applicability reason",
     "RED command",
     "RED result",
@@ -113,6 +117,32 @@ TDD_SECTION_LABELS = (
     "Refactor check",
     "Substitute check",
     "No-test reason",
+    "Unverified critical path",
+)
+TDD_TRACE_REQUIRED_LABELS = (
+    "Trace path",
+    "Chronology summary",
+    "First production edit",
+    "Unverified critical path",
+)
+TDD_RED_GREEN_LABELS = (
+    "RED command",
+    "RED result",
+    "RED failure reason",
+    "GREEN command",
+    "GREEN result",
+)
+EVALUATOR_GATE_LABELS = (
+    "TDD trace path",
+    "Trace chronology checked",
+    "RED before GREEN",
+    "First production edit after RED",
+    "Gate records reviewed",
+    "Missing or invalid gate records",
+    "Strict TDD evidence accepted",
+    "Substitute verification accepted",
+    "Substitute reason checked",
+    "Review gate evidence checked",
 )
 
 
@@ -146,7 +176,7 @@ def extract_section(markdown: str, heading: str) -> str:
 
 
 def extract_label_value(section: str, label: str) -> str | None:
-    pattern = re.compile(rf"^\s*-\s+{re.escape(label)}:\s*(.*?)\s*$", re.MULTILINE)
+    pattern = re.compile(rf"^[ \t]*-[ \t]+{re.escape(label)}:[ \t]*(.*?)[ \t]*$", re.MULTILINE)
     match = pattern.search(section)
     if match is None:
         return None
@@ -168,6 +198,27 @@ def validate_tdd_report_section(markdown: str) -> list[str]:
     if mode and mode not in VALID_VERIFICATION_GATE_MODES:
         choices = ", ".join(sorted(VALID_VERIFICATION_GATE_MODES))
         errors.append(f"{section_name}: Gate mode must be one of {choices}; got {mode!r}")
+    elif mode in {"strict_tdd", "test_first_evidence"}:
+        for label in (*TDD_TRACE_REQUIRED_LABELS, *TDD_RED_GREEN_LABELS):
+            if not extract_label_value(section, label):
+                errors.append(f"{section_name}: {mode} requires non-empty field {label!r}")
+    elif mode == "substitute":
+        for label in (*TDD_TRACE_REQUIRED_LABELS, "Substitute check", "No-test reason"):
+            if not extract_label_value(section, label):
+                errors.append(f"{section_name}: substitute requires non-empty field {label!r}")
+    return errors
+
+
+def validate_evaluator_gate_section(markdown: str) -> list[str]:
+    section_name = "Testing Gate Evidence Checked"
+    section = extract_section(markdown, section_name)
+    if not section:
+        return [f"missing section: {section_name}"]
+
+    errors: list[str] = []
+    for label in EVALUATOR_GATE_LABELS:
+        if extract_label_value(section, label) is None:
+            errors.append(f"{section_name}: missing field {label!r}")
     return errors
 
 
@@ -362,6 +413,7 @@ def main() -> int:
             errors.append("missing Result line")
         elif result not in VALID_RESULTS:
             errors.append(f"Result must be one of {', '.join(sorted(VALID_RESULTS))}; got {result!r}")
+        errors.extend(validate_evaluator_gate_section(markdown))
     elif args.type == "subagent":
         errors.extend(validate_tdd_report_section(markdown))
 

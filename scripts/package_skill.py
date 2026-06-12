@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a clean runtime-only copy of the multi-agent-dispatcher skill."""
+"""Create a clean runtime-only copy of the agent-dispatch-harness skill."""
 
 from __future__ import annotations
 
@@ -16,13 +16,17 @@ RUNTIME_FILES = [
     "adapters/claude-code.md",
     "adapters/codex.md",
     "references/closed-loop-pattern.md",
+    "references/bugfix-lane.md",
     "references/eval_cases.md",
+    "references/feature-spec-lane.md",
     "references/harness-protocol.md",
     "references/roles.md",
     "references/stop-conditions.md",
     "references/superpowers-integration.md",
     "references/tdd-gates.md",
     "scripts/init_run.py",
+    "scripts/harness_test_run.py",
+    "scripts/tdd_gate_check.py",
     "scripts/validate_report.py",
     "templates/acceptance_registry.json",
     "templates/capability_snapshot.md",
@@ -32,6 +36,7 @@ RUNTIME_FILES = [
     "templates/subagent_report.md",
     "templates/subagent_task.md",
     "templates/task_spec.md",
+    "templates/tdd_trace.jsonl",
     "templates/trace.jsonl",
 ]
 
