@@ -85,7 +85,7 @@ For Full Harness, the manager must pass these gates:
 2. **Capability Gate:** record the current runtime abilities and fallback plan.
 3. **Plan Gate:** define the DAG, ownership, budgets, verification method, and stop conditions.
 4. **State Gate:** write stage/task status to durable artifacts after every meaningful stage.
-5. **Testing / Review Gate:** for code behavior changes, require test-first evidence when a meaningful test path exists; for high-risk implementation, separate spec compliance review from code quality review.
+5. **Testing / Review Gate:** for code behavior changes, require the right testing gate (`strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`) and record auditable evidence; for high-risk implementation, separate spec compliance review from code quality review.
 6. **Verification Gate:** map evidence to acceptance criteria before PASS.
 7. **Supervision Gate:** stop when budget, risk, ownership, or verification rules require it.
 
@@ -146,7 +146,7 @@ Recommended files:
 - `progress.md`: human-readable current goal, stage status, changed files, decisions, commands, evidence, risks, and next step.
 - `trace.jsonl`: append-only run events such as plan gate, agent spawn, tool evidence, verification, stop, merge, and handoff.
 - `X.Y-<agent>.md`: each sub-agent report.
-- `evaluator_report.md`: pass/fail evidence for high-risk, UI, release, or user-facing tasks.
+- `evaluator_report.md`: pass/fail evidence for high-risk, UI, release, or user-facing tasks, including testing gate evidence when implementation behavior changed.
 
 Use templates in `templates/` when no project-specific format exists.
 
@@ -239,8 +239,11 @@ Use project tests and local instructions first. Do not invent meaningless tests 
 For code behavior changes in Lite Orchestration or Full Harness:
 
 - Identify the relevant test, fixture, script, smoke check, or manual verification path before implementation.
-- If a meaningful automated test exists or can be added at reasonable cost, require test-first evidence: failing or gap-revealing test before production change, then passing verification after.
-- If the project has no suitable test infrastructure or the change is docs/config-only, record the reason and use the smallest useful substitute verification.
+- Choose and record a gate mode before implementation: `strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`.
+- Use `strict_tdd` when the user, project instructions, phase gate, or assigned worker task explicitly requires TDD. Strict TDD requires RED command/result/failure reason before production code, GREEN command/result after implementation, and a refactor check after cleanup.
+- Use `test_first_evidence` for ordinary Lite/Full code behavior changes when a meaningful automated test exists or can be added at reasonable cost. The evidence must show a failing or gap-revealing test before production change, then passing verification after.
+- Use `substitute` only when a meaningful test-first path is unavailable or disproportionate. Record the no-test reason and the substitute check.
+- Use `not_applicable` only for docs-only, config-only, analysis-only, or non-behavior work.
 
 For Full Harness implementation tasks:
 
@@ -268,6 +271,8 @@ Ask each sub-agent to return only four lines:
 For larger findings, require a report file under `<artifact-dir>/` instead of pasting the report into chat.
 
 Each report should include: goal, files touched, commands run, evidence, unresolved risks, assumptions that affect merging, and any stub/TODO/mock/unverified path.
+
+Each implementation report must include `Test-First Or Substitute Verification` with gate mode and RED/GREEN or substitute fields. The manager must reject a code behavior report that omits this record or uses `not_applicable` without a non-code reason.
 
 When a sub-agent returns a report path, validate its structure before relying on it:
 
@@ -332,6 +337,7 @@ End with:
 - Read `references/closed-loop-pattern.md` when designing or revising the orchestration loop.
 - Read `references/harness-protocol.md` when deciding which control layers should be hard protocol versus lightweight guidance.
 - Read `references/superpowers-integration.md` when deciding how to borrow TDD, parallel-agent, review, worktree, or verification methods without letting another workflow replace this skill's mode router.
+- Read `references/tdd-gates.md` when a task changes code behavior, the user explicitly asks for TDD, or a worker report needs TDD/substitute verification acceptance.
 - Read `references/roles.md` when deciding whether to spawn explorers, workers, evaluators, or mergers.
 - Read `references/stop-conditions.md` when a task has high impact, ambiguous scope, repeated failures, or external side effects.
 - Read `references/eval_cases.md` when testing whether this skill triggers and behaves correctly.
@@ -341,4 +347,4 @@ End with:
 
 ---
 
-*Multi-Agent Dispatcher v5.2.2 | 2026-05-28*
+*Multi-Agent Dispatcher v5.3.0 | 2026-06-12*

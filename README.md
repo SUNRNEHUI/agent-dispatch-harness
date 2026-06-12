@@ -4,7 +4,7 @@
 
 Multi-Agent Dispatcher is an agent skill for routing explicit multi-agent requests into the smallest execution mode that can complete the work reliably. It avoids unnecessary delegation for small tasks and provides a durable harness for long, risky, resumable, evidence-verified work.
 
-Current release: **v5.2.2** · 2026-05-28
+Current version: **v5.3.0** · 2026-06-12
 
 ---
 
@@ -29,6 +29,7 @@ Sub-agents are used only for bounded execution, investigation, review, or evalua
 - **Mode selection:** choose Direct, Lite, or Full execution before creating workers or artifacts.
 - **Selective delegation:** dispatch sub-agents only when the task has clean ownership boundaries.
 - **Durable state:** preserve task state for long or resumable work under a project workspace directory.
+- **Auditable testing gates:** distinguish strict TDD, test-first evidence, substitute verification, and non-applicable work.
 - **Evidence-based acceptance:** require tests, build output, logs, browser checks, screenshots, CI, readback, or evaluator reports before completion.
 - **Runtime adapters:** map the same protocol to Codex, Claude Code, or similar coding-agent environments.
 - **Clean packaging:** generate a runtime-only install package without repository docs, local caches, generated workspaces, or private configuration.
@@ -329,6 +330,14 @@ Mode selection always runs first. Supporting methods are applied only when they 
 ---
 
 ## Release History
+
+### v5.3.0
+
+- Added a two-level testing model: `Test-First Evidence Gate` and `Strict TDD Gate`.
+- Added `references/tdd-gates.md` for RED/GREEN, substitute verification, and manager acceptance rules.
+- Added required `Test-First Or Substitute Verification` fields to sub-agent reports.
+- Extended protocol JSON records with `verification_gate`.
+- Updated validation so sub-agent reports and protocol records cannot omit the testing gate structure.
 
 ### v5.2.2
 

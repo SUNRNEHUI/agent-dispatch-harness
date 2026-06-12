@@ -61,6 +61,20 @@ def write_text(path: Path, content: str, force: bool) -> bool:
     return True
 
 
+def default_verification_gate() -> dict[str, str]:
+    return {
+        "mode": "not_applicable",
+        "red_command": "",
+        "red_result": "",
+        "red_failure_reason": "",
+        "green_command": "",
+        "green_result": "",
+        "refactor_check": "",
+        "substitute_check": "",
+        "no_test_reason": "",
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Create a multi-agent artifact directory from templates.")
     parser.add_argument("--project-root", default=".", help="Project root where workspace/<slug> will be created.")
@@ -107,6 +121,7 @@ def main() -> int:
             "dependencies": [],
             "expected_outputs": [],
             "verification": [],
+            "verification_gate": default_verification_gate(),
             "retry_count": 0,
             "budget": "",
             "evidence": [],
@@ -160,6 +175,7 @@ def main() -> int:
                     "required_evidence": [],
                     "evidence": [],
                     "owner": "main-agent",
+                    "verification_gate": default_verification_gate(),
                     "linked_tasks": [item["id"] for item in task_items],
                     "blocking_issues": [],
                 }

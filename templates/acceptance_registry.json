@@ -10,6 +10,17 @@
       "required_evidence": [],
       "evidence": [],
       "owner": "main-agent",
+      "verification_gate": {
+        "mode": "not_applicable",
+        "red_command": "",
+        "red_result": "",
+        "red_failure_reason": "",
+        "green_command": "",
+        "green_result": "",
+        "refactor_check": "",
+        "substitute_check": "",
+        "no_test_reason": ""
+      },
       "linked_tasks": [],
       "blocking_issues": []
     }

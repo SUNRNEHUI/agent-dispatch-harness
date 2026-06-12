@@ -10,7 +10,7 @@ The harness turns multi-agent orchestration from advice into a required control 
 2. discover actual runtime capabilities
 3. create a bounded spec and acceptance registry
 4. advance through explicit states
-5. collect worker, testing, review, and evaluator evidence
+5. collect worker, testing-gate, review, and evaluator evidence
 6. stop on budget or safety breaks
 7. claim completion only when required acceptance records pass
 
@@ -43,7 +43,7 @@ Lite mode is appropriate when:
 - a worker-style split helps review without needing durable machine-readable state
 - verification can be captured in a small command summary, diff review, screenshot, or report
 
-Lite mode may borrow test-first evidence, compact review, or parallel-agent discipline when useful, but it should not expand into full ceremony without a Full Harness trigger.
+Lite mode may borrow test-first evidence, strict TDD, compact review, or parallel-agent discipline when useful, but it should not expand into full ceremony without a Full Harness trigger.
 
 ### Full Harness
 
@@ -87,9 +87,21 @@ A Full Harness run should preserve these records in durable files when the task 
 - required evidence
 - status: `pending`, `pass`, `fail`, `blocked`, or `scoped_out`
 - evidence path or command summary
-- test-first or substitute verification evidence for code behavior changes when applicable
+- verification gate mode: `strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`
+- RED/GREEN evidence or substitute verification evidence for code behavior changes when applicable
 - spec compliance or code quality review evidence when required by risk
 - evaluator notes when relevant
+
+### Testing Gate Record
+
+For every implementation task, record the selected gate mode:
+
+- `strict_tdd`: required when the user, project instructions, phase gate, or task assignment explicitly requires TDD. Requires RED command/result/failure reason before production code, GREEN command/result after implementation, and a refactor check after cleanup.
+- `test_first_evidence`: default for Lite or Full code behavior changes when meaningful tests exist or can be added at reasonable cost. Requires failing or gap-revealing evidence before implementation and passing verification after.
+- `substitute`: allowed only when meaningful test-first evidence is unavailable or disproportionate. Requires no-test reason and substitute check.
+- `not_applicable`: allowed only for docs-only, config-only, analysis-only, or non-behavior work.
+
+Worker reports and acceptance records should carry the same gate mode. A report that omits the gate mode is not acceptable evidence for code behavior changes.
 
 ### Budget Record
 
@@ -139,7 +151,7 @@ The manager can say the task is complete only when:
 
 - required capability fallbacks are recorded
 - every required acceptance record is `pass` or explicitly `scoped_out` by user decision
-- required testing or substitute verification evidence has been reviewed
+- required testing gate evidence has been reviewed, including RED/GREEN or substitute fields when applicable
 - required spec compliance and code quality reviews are `pass` or explicitly scoped out by user decision
 - evaluator `FAIL` has been resolved or explicitly scoped out by user decision
 - budget breakers are closed with a continuation or stop decision

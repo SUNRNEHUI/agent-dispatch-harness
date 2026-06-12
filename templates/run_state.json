@@ -30,6 +30,17 @@
     "dependencies": [],
     "expected_outputs": [],
     "verification": [],
+    "verification_gate": {
+      "mode": "not_applicable",
+      "red_command": "",
+      "red_result": "",
+      "red_failure_reason": "",
+      "green_command": "",
+      "green_result": "",
+      "refactor_check": "",
+      "substitute_check": "",
+      "no_test_reason": ""
+    },
     "retry_count": 0,
     "budget": "",
     "evidence": [],

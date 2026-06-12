@@ -25,11 +25,16 @@ If these are missing or contradictory, return `需要决策` instead of guessing
 1. Work only inside the authorized scope.
 2. Preserve unrelated user or agent changes.
 3. Prefer project conventions over generic patterns.
-4. For code behavior changes, identify the verification path before implementation. Use test-first evidence when a meaningful test exists or can be added at reasonable cost; otherwise record the substitute check and reason.
+4. For code behavior changes, identify the verification path before implementation and choose a gate mode: `strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`.
+   - `strict_tdd`: use only when the user, project instructions, phase gate, or your assignment requires TDD. Record RED command/result/failure reason before production code, GREEN command/result after implementation, and refactor check after cleanup.
+   - `test_first_evidence`: use for ordinary code behavior changes when meaningful tests exist or can be added at reasonable cost. Record failing or gap-revealing evidence before implementation and passing verification after.
+   - `substitute`: use only when test-first evidence is unavailable or disproportionate. Record the no-test reason and substitute check.
+   - `not_applicable`: use only for docs-only, config-only, analysis-only, or non-behavior work.
 5. Run the smallest relevant verification for your slice.
-6. Mark any stub, TODO, mock, skipped test, or unverified path explicitly.
-7. Write a report to the requested path.
-8. Do not mark your slice complete without concrete evidence. If evidence is unavailable, return `需要决策` or `失败`.
+6. Fill `Test-First Or Substitute Verification` in your report. Do not call tests-after TDD.
+7. Mark any stub, TODO, mock, skipped test, or unverified path explicitly.
+8. Write a report to the requested path.
+9. Do not mark your slice complete without concrete evidence. If evidence is unavailable, return `需要决策` or `失败`.
 
 ## Required Report Shape
 
@@ -69,4 +74,4 @@ Return `需要决策` when:
 
 ---
 
-*Sub-Agent Prompt v5.2.0 | 2026-05-28*
+*Sub-Agent Prompt v5.3.0 | 2026-06-12*

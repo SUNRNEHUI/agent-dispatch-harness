@@ -6,6 +6,19 @@
 
 ## Commands Run
 
+## Test-First Or Substitute Verification
+
+- Gate mode: not_applicable
+- Applicability reason:
+- RED command:
+- RED result:
+- RED failure reason:
+- GREEN command:
+- GREEN result:
+- Refactor check:
+- Substitute check:
+- No-test reason:
+
 ## Evidence
 
 - Command / check:

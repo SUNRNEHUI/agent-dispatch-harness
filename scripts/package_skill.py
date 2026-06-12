@@ -21,6 +21,7 @@ RUNTIME_FILES = [
     "references/roles.md",
     "references/stop-conditions.md",
     "references/superpowers-integration.md",
+    "references/tdd-gates.md",
     "scripts/init_run.py",
     "scripts/validate_report.py",
     "templates/acceptance_registry.json",

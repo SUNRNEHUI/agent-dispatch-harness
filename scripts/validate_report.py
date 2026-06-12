@@ -14,6 +14,7 @@ REQUIRED_SECTIONS = {
         "Goal",
         "Files Touched",
         "Commands Run",
+        "Test-First Or Substitute Verification",
         "Evidence",
         "Unresolved Risks",
         "Assumptions Affecting Merge",
@@ -22,6 +23,7 @@ REQUIRED_SECTIONS = {
     ],
     "evaluator": [
         "Scope Checked",
+        "Testing Gate Evidence Checked",
         "Evidence",
         "Blocking Issues",
         "Non-Blocking Issues",
@@ -83,6 +85,35 @@ VALID_TASK_STATUSES = {
     "cancelled",
     "unplanned",
 }
+VALID_VERIFICATION_GATE_MODES = {
+    "strict_tdd",
+    "test_first_evidence",
+    "substitute",
+    "not_applicable",
+}
+VERIFICATION_GATE_FIELDS = (
+    "mode",
+    "red_command",
+    "red_result",
+    "red_failure_reason",
+    "green_command",
+    "green_result",
+    "refactor_check",
+    "substitute_check",
+    "no_test_reason",
+)
+TDD_SECTION_LABELS = (
+    "Gate mode",
+    "Applicability reason",
+    "RED command",
+    "RED result",
+    "RED failure reason",
+    "GREEN command",
+    "GREEN result",
+    "Refactor check",
+    "Substitute check",
+    "No-test reason",
+)
 
 
 def extract_headings(markdown: str) -> set[str]:
@@ -100,6 +131,62 @@ def extract_result(markdown: str) -> str | None:
         if match:
             return match.group(1).strip()
     return None
+
+
+def extract_section(markdown: str, heading: str) -> str:
+    pattern = re.compile(rf"^##\s+{re.escape(heading)}\s*$", re.MULTILINE)
+    match = pattern.search(markdown)
+    if match is None:
+        return ""
+    start = match.end()
+    next_heading = re.search(r"^##\s+", markdown[start:], re.MULTILINE)
+    if next_heading is None:
+        return markdown[start:]
+    return markdown[start : start + next_heading.start()]
+
+
+def extract_label_value(section: str, label: str) -> str | None:
+    pattern = re.compile(rf"^\s*-\s+{re.escape(label)}:\s*(.*?)\s*$", re.MULTILINE)
+    match = pattern.search(section)
+    if match is None:
+        return None
+    return match.group(1).strip()
+
+
+def validate_tdd_report_section(markdown: str) -> list[str]:
+    section_name = "Test-First Or Substitute Verification"
+    section = extract_section(markdown, section_name)
+    if not section:
+        return [f"missing section: {section_name}"]
+
+    errors: list[str] = []
+    for label in TDD_SECTION_LABELS:
+        if extract_label_value(section, label) is None:
+            errors.append(f"{section_name}: missing field {label!r}")
+
+    mode = extract_label_value(section, "Gate mode")
+    if mode and mode not in VALID_VERIFICATION_GATE_MODES:
+        choices = ", ".join(sorted(VALID_VERIFICATION_GATE_MODES))
+        errors.append(f"{section_name}: Gate mode must be one of {choices}; got {mode!r}")
+    return errors
+
+
+def validate_verification_gate(value: object, prefix: str) -> list[str]:
+    if not isinstance(value, dict):
+        return [f"{prefix} must be an object"]
+
+    errors: list[str] = []
+    for field in VERIFICATION_GATE_FIELDS:
+        if field not in value:
+            errors.append(f"{prefix} missing {field}")
+        elif not isinstance(value[field], str):
+            errors.append(f"{prefix}.{field} must be a string")
+
+    mode = value.get("mode")
+    if isinstance(mode, str) and mode not in VALID_VERIFICATION_GATE_MODES:
+        choices = ", ".join(sorted(VALID_VERIFICATION_GATE_MODES))
+        errors.append(f"{prefix}.mode must be one of {choices}; got {mode!r}")
+    return errors
 
 
 def validate_acceptance_registry(path: Path) -> list[str]:
@@ -126,7 +213,15 @@ def validate_acceptance_registry(path: Path) -> list[str]:
         if not isinstance(item, dict):
             errors.append(f"{prefix} must be an object")
             continue
-        for key in ("id", "description", "status", "required_evidence", "evidence", "owner"):
+        for key in (
+            "id",
+            "description",
+            "status",
+            "required_evidence",
+            "evidence",
+            "owner",
+            "verification_gate",
+        ):
             if key not in item:
                 errors.append(f"{prefix} missing {key}")
         if "status" in item:
@@ -138,6 +233,8 @@ def validate_acceptance_registry(path: Path) -> list[str]:
             errors.append(f"{prefix}.evidence must be a list")
         if "required_evidence" in item and not isinstance(item["required_evidence"], list):
             errors.append(f"{prefix}.required_evidence must be a list")
+        if "verification_gate" in item:
+            errors.extend(validate_verification_gate(item["verification_gate"], f"{prefix}.verification_gate"))
     return errors
 
 
@@ -182,6 +279,7 @@ def validate_run_state(path: Path) -> list[str]:
             "dependencies",
             "expected_outputs",
             "verification",
+            "verification_gate",
             "retry_count",
             "evidence",
             "stop_reason",
@@ -197,6 +295,8 @@ def validate_run_state(path: Path) -> list[str]:
         for key in ("allowed_scope", "dependencies", "expected_outputs", "verification"):
             if key in item and not isinstance(item[key], list):
                 errors.append(f"{prefix}.{key} must be a list")
+        if "verification_gate" in item:
+            errors.extend(validate_verification_gate(item["verification_gate"], f"{prefix}.verification_gate"))
         if "retry_count" in item and not isinstance(item["retry_count"], int):
             errors.append(f"{prefix}.retry_count must be an integer")
 
@@ -262,6 +362,8 @@ def main() -> int:
             errors.append("missing Result line")
         elif result not in VALID_RESULTS:
             errors.append(f"Result must be one of {', '.join(sorted(VALID_RESULTS))}; got {result!r}")
+    elif args.type == "subagent":
+        errors.extend(validate_tdd_report_section(markdown))
 
     if args.type in {"progress", "evaluator", "spec"}:
         errors.extend(validate_protocol_files(path.parent))

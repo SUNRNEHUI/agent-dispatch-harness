@@ -21,10 +21,15 @@
 - 代码：
 - 报告：<artifact-dir>/X.Y-报告.md
 - 证据：必须包含命令、输出摘要、路径或截图/日志位置；不能只写“已验证”
+- TDD / 替代验证记录：必须填写报告中的 `Test-First Or Substitute Verification`；不能省略 gate mode
 - 未验证路径：列出未跑通、只静态检查、依赖外部环境或仍需主 agent/evaluator 验证的路径
 
 ## 验证
 
+- Gate mode：strict_tdd / test_first_evidence / substitute / not_applicable
+- Strict TDD：若用户或项目明确要求 TDD，必须提供 RED command/result/failure reason、GREEN command/result 和 refactor check
+- Test-first evidence：若是代码行为变更且存在有意义测试，必须先给失败或暴露缺口的测试证据，再实现并跑通过
+- Substitute：若无测试基础设施、docs/config-only 或测试成本明显不合理，必须说明 no-test reason 并给 substitute check
 - 命令：
 - 浏览器/环境检查：
 - 期望证据：

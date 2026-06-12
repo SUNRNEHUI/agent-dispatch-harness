@@ -162,7 +162,14 @@ After every returned report, update proportional state: compact plan/status for 
 
 Sub-agent completion is not final completion. The manager or evaluator owns acceptance.
 
-For code behavior changes, identify the verification path before implementation. When meaningful project tests exist or can be added at reasonable cost, require test-first evidence: a failing or gap-revealing test before the production change and passing verification after. For docs-only, config-only, or no-test-infrastructure tasks, record the reason and use the smallest useful substitute check.
+For code behavior changes, identify the verification path before implementation and choose a gate mode: `strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`.
+
+- Use `strict_tdd` when the user, project instructions, phase gate, or worker assignment requires TDD. Require RED command/result/failure reason before production code, GREEN command/result after implementation, and a refactor check after cleanup.
+- Use `test_first_evidence` for ordinary Lite/Full code behavior changes when meaningful project tests exist or can be added at reasonable cost. Require a failing or gap-revealing test before the production change and passing verification after.
+- Use `substitute` only when a meaningful test-first path is unavailable or disproportionate. Record the no-test reason and the substitute check.
+- Use `not_applicable` only for docs-only, config-only, analysis-only, or non-behavior work.
+
+Every worker report must include `Test-First Or Substitute Verification`. Reject code behavior reports that omit the record, relabel tests-after as TDD, or use substitute verification without a concrete reason.
 
 Use external evidence:
 
@@ -177,6 +184,8 @@ For Full Harness implementation risk, prefer two distinct reviews:
 
 - Spec compliance review: required behavior, non-goals, missing work, and extra behavior.
 - Code quality review: maintainability, project conventions, error handling, and regression risk.
+
+Evaluator reports for implementation work should include `Testing Gate Evidence Checked`, especially when strict TDD or substitute verification affects acceptance.
 
 Review PASS/FAIL/BLOCKED is evidence for acceptance. It does not replace manager acceptance. FAIL or BLOCKED creates a repair task, stop reason, or explicit user decision.
 
@@ -214,4 +223,4 @@ End with:
 
 ---
 
-*Master Agent Prompt v5.2.0 | 2026-05-28*
+*Master Agent Prompt v5.3.0 | 2026-06-12*

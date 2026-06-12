@@ -21,6 +21,7 @@ Do not treat another planning, TDD, worktree, review, verification, or parallel-
 | Parallel-agent discipline | Lite / Full | Dispatch only independent problem domains with clean ownership and no unresolved sequential dependency. |
 | Fresh worker context | Lite / Full | Give each worker task-local instructions instead of relying on hidden manager context. |
 | Test-first evidence | Lite / Full code behavior changes | Prefer RED/GREEN evidence when meaningful tests exist or can be added at reasonable cost. |
+| Strict TDD gate | Explicit TDD requests, project TDD rules, tested bug fixes | Require RED before production code, GREEN after implementation, and a refactor check. |
 | Spec compliance review | Full, or risky Lite | Check whether the implementation matches acceptance criteria, non-goals, and scope. |
 | Code quality review | Full, or risky Lite | Check maintainability, project conventions, error handling, and regression risk. |
 | Verification before completion | All modes | Make final claims only after reading current evidence and stating unverified paths. |
@@ -41,6 +42,7 @@ Use lightweight borrowing:
 - assign disjoint file or responsibility ownership
 - ask for compact reports or inline evidence
 - use test-first evidence when the task changes code behavior and a meaningful test path exists
+- use strict TDD only when the user, project, or worker assignment requires it
 - avoid full implementer/reviewer loops unless risk justifies them
 
 ### Full Harness
@@ -48,7 +50,8 @@ Use lightweight borrowing:
 Use stronger borrowing:
 
 - require capability and ownership records
-- require test-first or substitute verification evidence for code behavior changes
+- require an explicit testing gate mode for implementation tasks: `strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`
+- require RED/GREEN or substitute verification evidence for code behavior changes
 - use spec compliance and code quality review as separate checks when implementation risk is material
 - keep review results and verification evidence tied to acceptance criteria
 - stop or repair on FAIL/BLOCKED instead of summarizing around it
