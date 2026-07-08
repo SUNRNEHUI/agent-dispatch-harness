@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import filecmp
 import shutil
 from pathlib import Path
 
 
 RUNTIME_FILES = [
+    "VERSION",
     "SKILL.md",
     "master-prompt.md",
     "sub-prompt.md",
@@ -21,16 +23,20 @@ RUNTIME_FILES = [
     "references/feature-spec-lane.md",
     "references/harness-protocol.md",
     "references/roles.md",
+    "references/state-memory-boundary.md",
     "references/stop-conditions.md",
     "references/superpowers-integration.md",
     "references/tdd-gates.md",
     "scripts/init_run.py",
     "scripts/harness_test_run.py",
+    "scripts/status.py",
     "scripts/tdd_gate_check.py",
     "scripts/validate_report.py",
     "templates/acceptance_registry.json",
     "templates/capability_snapshot.md",
     "templates/evaluator_report.md",
+    "templates/lite_plan.md",
+    "templates/lite_review.md",
     "templates/progress_ledger.md",
     "templates/run_state.json",
     "templates/subagent_report.md",
@@ -54,7 +60,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        required=True,
+        required=False,
         help="Destination directory for the clean runtime copy.",
     )
     parser.add_argument(
@@ -62,22 +68,38 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Replace the output directory if it already exists.",
     )
+    parser.add_argument(
+        "--check",
+        type=Path,
+        help="Compare a freshly generated runtime package with an installed skill directory.",
+    )
+    parser.add_argument(
+        "--verify-source",
+        action="store_true",
+        help="Only verify that runtime source files exist.",
+    )
     return parser.parse_args()
 
 
-def validate_paths(source: Path, output: Path) -> tuple[Path, Path]:
+def validate_source(source: Path) -> Path:
     source = source.expanduser().resolve()
-    output = output.expanduser().resolve()
 
     if not (source / "SKILL.md").is_file():
         raise SystemExit(f"source does not look like a skill repo: {source}")
 
-    if source == output or source in output.parents:
-        raise SystemExit("output must not be the source directory or inside it")
-
     missing = [path for path in RUNTIME_FILES if not (source / path).is_file()]
     if missing:
         raise SystemExit("missing runtime files:\n- " + "\n- ".join(missing))
+
+    return source
+
+
+def validate_paths(source: Path, output: Path) -> tuple[Path, Path]:
+    source = validate_source(source)
+    output = output.expanduser().resolve()
+
+    if source == output or source in output.parents:
+        raise SystemExit("output must not be the source directory or inside it")
 
     return source, output
 
@@ -100,8 +122,55 @@ def copy_runtime_files(source: Path, output: Path) -> None:
         shutil.copy2(src, dst)
 
 
+def compare_dirs(expected: Path, actual: Path) -> list[str]:
+    differences: list[str] = []
+
+    def walk(left: Path, right: Path, relative: Path = Path("")) -> None:
+        comparison = filecmp.dircmp(left, right)
+        for name in comparison.left_only:
+            differences.append(f"missing in install: {relative / name}")
+        for name in comparison.right_only:
+            differences.append(f"extra in install: {relative / name}")
+        for name in comparison.diff_files:
+            differences.append(f"modified in install: {relative / name}")
+        for name in comparison.funny_files:
+            differences.append(f"unreadable or incompatible: {relative / name}")
+        for name in comparison.common_dirs:
+            walk(left / name, right / name, relative / name)
+
+    walk(expected, actual)
+    return sorted(str(item) for item in differences)
+
+
+def check_install(source: Path, install_dir: Path) -> int:
+    source = validate_source(source)
+    install_dir = install_dir.expanduser().resolve()
+    if not install_dir.is_dir():
+        raise SystemExit(f"install directory does not exist: {install_dir}")
+
+    temp_output = Path("/tmp/agent-dispatch-harness-package-check")
+    prepare_output(temp_output, force=True)
+    copy_runtime_files(source, temp_output)
+    differences = compare_dirs(temp_output, install_dir)
+    if differences:
+        print(f"FAIL runtime install differs from source package: {install_dir}")
+        for difference in differences:
+            print(f"- {difference}")
+        return 1
+    print(f"runtime_install=verified {install_dir}")
+    return 0
+
+
 def main() -> None:
     args = parse_args()
+    if args.verify_source:
+        source = validate_source(args.source)
+        print(f"runtime_source=verified {source}")
+        return
+    if args.check:
+        raise SystemExit(check_install(args.source, args.check))
+    if args.output is None:
+        raise SystemExit("--output is required unless --check or --verify-source is used")
     source, output = validate_paths(args.source, args.output)
     prepare_output(output, args.force)
     copy_runtime_files(source, output)

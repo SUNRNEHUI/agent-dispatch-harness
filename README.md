@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness, formerly Multi-Agent Dispatcher, is an agent skill for routing explicit multi-agent requests into the smallest execution mode that can complete the work reliably. It avoids unnecessary delegation for small tasks and provides a durable harness for long, risky, resumable, evidence-verified work.
 
-Current version: **v5.6.0** · 2026-06-12
+Current version: **v5.8.0** · 2026-07-08
 
 ---
 
@@ -162,6 +162,8 @@ cd agent-dispatch-harness
 Create a clean runtime package:
 
 ```bash
+python3 scripts/sync_version.py
+python3 scripts/package_skill.py --verify-source
 python3 scripts/package_skill.py --output /tmp/agent-dispatch-harness-runtime --force
 ```
 
@@ -170,6 +172,7 @@ Install the runtime package into Codex:
 ```bash
 mkdir -p ~/.codex/skills/agent-dispatch-harness
 rsync -a --delete /tmp/agent-dispatch-harness-runtime/ ~/.codex/skills/agent-dispatch-harness/
+python3 scripts/package_skill.py --check ~/.codex/skills/agent-dispatch-harness
 ```
 
 The runtime package contains only the files needed by the skill at execution time.
@@ -194,23 +197,31 @@ This avoids duplicate skill entries that describe the same workflow.
 
 The runtime package includes:
 
+- `VERSION`
 - `SKILL.md`
 - `master-prompt.md`
 - `sub-prompt.md`
 - `agents/openai.yaml`
 - `adapters/`
 - `references/`
+  - `references/state-memory-boundary.md`
 - `templates/`
 - `scripts/init_run.py`
 - `scripts/harness_test_run.py`
+- `scripts/status.py`
 - `scripts/tdd_gate_check.py`
 - `scripts/validate_report.py`
+- `templates/lite_plan.md`
+- `templates/lite_review.md`
 - `templates/tdd_trace.jsonl`
+
+The authoritative file list is `scripts/package_skill.py:RUNTIME_FILES`; this section summarizes the runtime categories.
 
 It intentionally excludes:
 
 - `README.md`
 - `README.zh-CN.md`
+- `scripts/sync_version.py`
 - `scripts/package_skill.py`
 - `.git`
 - generated workspace artifacts
@@ -370,6 +381,23 @@ Mode selection always runs first. Supporting methods are applied only when they 
 ---
 
 ## Release History
+
+### v5.8.0
+
+- Added `VERSION` plus `scripts/sync_version.py` so current-version references can be checked or updated from one source.
+- Added runtime package checks with `scripts/package_skill.py --verify-source` and `--check <install-dir>`.
+- Added Lite Orchestration artifacts through `templates/lite_plan.md`, `templates/lite_review.md`, and `init_run.py --mode lite`.
+- Kept `progress.md` lightweight and added `scripts/status.py` for a generated single-screen summary from `run_state.json`.
+- Added validator support for `lite_plan`, `lite_review`, and Lite `run_state.json`, plus runtime behavior tests.
+- Kept automated mode-router evaluation out of this release; `references/eval_cases.md` remains the human-readable regression set.
+
+### v5.7.0
+
+- Added an explicit State and Memory boundary for Full Harness runs.
+- Clarified that `task_spec.md` is the local human-readable plan/spec, while `run_state.json` is the machine-readable live state.
+- Added `state_layers` for Working State, Session State, Execution Log, and Memory Boundary.
+- Added `references/state-memory-boundary.md` and included it in runtime packaging.
+- Updated validation to require the core `state_layers` structure in `run_state.json`.
 
 ### v5.6.0
 

@@ -63,7 +63,8 @@ In Lite Orchestration:
 - Apply parallel-agent discipline: dispatch only independent problem domains with no shared edit surface or unresolved sequential dependency.
 - Give each worker fresh, task-local context rather than relying on hidden conversation history.
 - Prefer short inline status or compact reports over a full artifact set.
-- Do not create `capability_snapshot.md`, `run_state.json`, `acceptance_registry.json`, `trace.jsonl`, or a full artifact directory unless risk or resumability justifies it.
+- If a lightweight artifact helps coordination, use `init_run.py --mode lite` to create `lite_plan.md` and minimal `run_state.json`; otherwise keep the plan inline.
+- Do not create `capability_snapshot.md`, `acceptance_registry.json`, `trace.jsonl`, `tdd_trace.jsonl`, or a full artifact directory unless risk or resumability justifies it.
 - Manager still owns merge, verification, and final acceptance.
 
 ### Full Harness
@@ -138,23 +139,29 @@ Full artifact mode only when justified. Direct Mode creates no orchestration art
 
 Prefer existing project planning, issue, or workspace conventions. If none exist, place artifacts under `<active-project-root>/workspace/<task-slug>/`.
 
-Recommended files:
+Recommended Full Harness files:
 
 - `task_spec.md`: goal, non-goals, constraints, acceptance criteria, verification evidence, risks, budget, and stop conditions.
 - `capability_snapshot.md`: available sub-agent, browser, worktree, shell, network, MCP, approval, and publish/deploy capabilities plus fallback plan.
-- `run_state.json`: machine-readable stages, tasks, status, budgets, retries, evidence ids, and stop reasons.
+- `run_state.json`: machine-readable stages, tasks, status, budgets, retries, state layers, evidence ids, and stop reasons.
 - `acceptance_registry.json`: acceptance criteria, required evidence, current status, and blocking issues.
-- `progress.md`: human-readable current goal, stage status, changed files, decisions, commands, evidence, risks, and next step.
+- `progress.md`: lightweight human-readable notes: snapshot, completed work, decisions, commands, verification, risks, and next step.
 - `trace.jsonl`: append-only run events such as plan gate, agent spawn, tool evidence, verification, stop, merge, and handoff.
 - `X.Y-<agent>.md`: each sub-agent report.
 - `evaluator_report.md`: pass/fail evidence for high-risk, UI, release, or user-facing tasks, including testing gate evidence when implementation behavior changed.
 
 Use templates in `templates/` when no project-specific format exists.
 
+For Lite Orchestration that needs a small local artifact, use:
+
+```bash
+python3 <skill-dir>/scripts/init_run.py --mode lite --project-root <active-project-root> --title "<task title>" --agents docs,review
+```
+
 For Full Harness, prefer the bundled initializer instead of hand-creating files:
 
 ```bash
-python3 <skill-dir>/scripts/init_run.py --project-root <active-project-root> --title "<task title>" --agents frontend,backend,tests
+python3 <skill-dir>/scripts/init_run.py --mode full --project-root <active-project-root> --title "<task title>" --agents frontend,backend,tests
 ```
 
 ## Context Intake
@@ -214,6 +221,14 @@ Before spawning sub-agents, define:
 Model the work as a DAG: parallel tasks share the same stage number; dependent tasks move to later stages.
 
 For full artifact mode, mirror the DAG in `run_state.json` and mirror acceptance criteria in `acceptance_registry.json`. Each task should have: `id`, `stage`, `owner`, `status`, `allowed_scope`, `dependencies`, `expected_outputs`, `verification`, `evidence`, `retry_count`, and `stop_reason`.
+
+Keep the state and memory boundary explicit:
+
+- `task_spec.md` is the local human-readable plan/spec. Update it when the agreed goal, scope, constraints, acceptance criteria, or verification strategy changes.
+- `progress.md` is the human-readable working ledger. Update it after meaningful stage, task, decision, command, or verification changes.
+- `run_state.json` is the machine-readable live state. Update `state_layers.working_state` for the current stage/task and `state_layers.session_state` for run-scoped shared decisions or assumptions.
+- `trace.jsonl` and `tdd_trace.jsonl` are append-only execution logs. Do not rewrite them to make the run look cleaner.
+- Cross-task memory does not belong in Full Harness artifacts. Record only `state_layers.memory_boundary.memory_candidates`; promote them later through an explicit memory or project-doc workflow.
 
 Use separate status vocabularies:
 
@@ -343,6 +358,7 @@ End with:
 
 - Read `references/closed-loop-pattern.md` when designing or revising the orchestration loop.
 - Read `references/harness-protocol.md` when deciding which control layers should be hard protocol versus lightweight guidance.
+- Read `references/state-memory-boundary.md` when deciding whether information belongs in `task_spec.md`, `progress.md`, `run_state.json`, `trace.jsonl`, or cross-task memory.
 - Read `references/superpowers-integration.md` when deciding how to borrow TDD, parallel-agent, review, worktree, or verification methods without letting another workflow replace this skill's mode router.
 - Read `references/bugfix-lane.md` for bounded defects that need Investigate -> RED -> Fix -> Audit -> Quality Gate -> Done.
 - Read `references/feature-spec-lane.md` for planned features that need Spec -> optional isolation -> task-level TDD -> review gates -> E2E/program verification.
@@ -351,10 +367,10 @@ End with:
 - Read `references/stop-conditions.md` when a task has high impact, ambiguous scope, repeated failures, or external side effects.
 - Read `references/eval_cases.md` when testing whether this skill triggers and behaves correctly.
 - Read `adapters/codex.md` or `adapters/claude-code.md` when the target runtime is known and runtime-specific controls matter.
-- Use `scripts/init_run.py` to create durable artifacts, `scripts/validate_report.py` to check reports, `scripts/harness_test_run.py` to generate wrapper-owned TDD trace events, and `scripts/tdd_gate_check.py` to validate `tdd_trace.jsonl` chronology when those runtime files are present.
-- Use `templates/task_spec.md`, `templates/progress_ledger.md`, `templates/subagent_task.md`, `templates/subagent_report.md`, and `templates/evaluator_report.md` when scripts are not suitable.
+- Use `scripts/init_run.py` to create Lite or Full artifacts, `scripts/status.py` to print a compact status from `run_state.json`, `scripts/validate_report.py` to check reports, `scripts/harness_test_run.py` to generate wrapper-owned TDD trace events, and `scripts/tdd_gate_check.py` to validate `tdd_trace.jsonl` chronology when those runtime files are present.
+- Use `templates/lite_plan.md`, `templates/lite_review.md`, `templates/task_spec.md`, `templates/progress_ledger.md`, `templates/subagent_task.md`, `templates/subagent_report.md`, and `templates/evaluator_report.md` when scripts are not suitable.
 - Use `templates/tdd_trace.jsonl` as the starting trace format for TDD runtime evidence when present.
 
 ---
 
-*Agent Dispatch Harness v5.6.0 | 2026-06-12*
+*Agent Dispatch Harness v5.8.0 | 2026-07-08*

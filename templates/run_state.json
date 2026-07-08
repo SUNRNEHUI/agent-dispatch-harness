@@ -3,6 +3,7 @@
   "created_at": "",
   "updated_at": "",
   "title": "",
+  "mode": "full",
   "artifact_dir": "",
   "trace_path": "trace.jsonl",
   "tdd_trace_path": "tdd_trace.jsonl",
@@ -21,6 +22,37 @@
     "updated_at": ""
   },
   "status": "intake",
+  "state_layers": {
+    "working_state": {
+      "current_stage": "1",
+      "current_task": "",
+      "active_blockers": [],
+      "volatile_notes": [],
+      "updated_at": ""
+    },
+    "session_state": {
+      "shared_decisions": [],
+      "shared_assumptions": [],
+      "artifact_paths": {
+        "task_spec": "task_spec.md",
+        "progress": "progress.md",
+        "acceptance_registry": "acceptance_registry.json",
+        "trace": "trace.jsonl",
+        "tdd_trace": "tdd_trace.jsonl"
+      },
+      "delegation_state": []
+    },
+    "execution_log": {
+      "trace_path": "trace.jsonl",
+      "tdd_trace_path": "tdd_trace.jsonl",
+      "append_only": true
+    },
+    "memory_boundary": {
+      "policy": "Do not write cross-task memory into run artifacts by default.",
+      "memory_candidates": [],
+      "promotion_required": "user_approval_or_project_doc_update"
+    }
+  },
   "current_stage": "1",
   "stages": [
     {

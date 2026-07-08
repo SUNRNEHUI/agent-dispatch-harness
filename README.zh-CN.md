@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness，原名 Multi-Agent Dispatcher，是面向 AI 编码代理的 skill，用于把明确的多智能体请求路由到最合适的执行模式。它避免小任务过度调度，并为长任务、高风险任务、可续跑任务和需要证据验收的任务提供持久化 harness。
 
-当前版本：**v5.6.0** · 2026-06-12
+当前版本：**v5.8.0** · 2026-07-08
 
 ---
 
@@ -162,6 +162,8 @@ cd agent-dispatch-harness
 生成干净的 runtime 包：
 
 ```bash
+python3 scripts/sync_version.py
+python3 scripts/package_skill.py --verify-source
 python3 scripts/package_skill.py --output /tmp/agent-dispatch-harness-runtime --force
 ```
 
@@ -170,6 +172,7 @@ python3 scripts/package_skill.py --output /tmp/agent-dispatch-harness-runtime --
 ```bash
 mkdir -p ~/.codex/skills/agent-dispatch-harness
 rsync -a --delete /tmp/agent-dispatch-harness-runtime/ ~/.codex/skills/agent-dispatch-harness/
+python3 scripts/package_skill.py --check ~/.codex/skills/agent-dispatch-harness
 ```
 
 runtime 包只包含 skill 运行时需要的文件。
@@ -194,23 +197,31 @@ rm -rf ~/.codex/skills/multi-agent-dispatcher ~/.codex/skills/multi-agent-orches
 
 runtime 包包含：
 
+- `VERSION`
 - `SKILL.md`
 - `master-prompt.md`
 - `sub-prompt.md`
 - `agents/openai.yaml`
 - `adapters/`
 - `references/`
+  - `references/state-memory-boundary.md`
 - `templates/`
 - `scripts/init_run.py`
 - `scripts/harness_test_run.py`
+- `scripts/status.py`
 - `scripts/tdd_gate_check.py`
 - `scripts/validate_report.py`
+- `templates/lite_plan.md`
+- `templates/lite_review.md`
 - `templates/tdd_trace.jsonl`
+
+权威文件清单以 `scripts/package_skill.py:RUNTIME_FILES` 为准；本节只概括 runtime 类别。
 
 runtime 包会排除：
 
 - `README.md`
 - `README.zh-CN.md`
+- `scripts/sync_version.py`
 - `scripts/package_skill.py`
 - `.git`
 - 生成的 workspace artifact
@@ -370,6 +381,23 @@ Superpowers-style methods = 可选的工程支持方法
 ---
 
 ## 版本历史
+
+### v5.8.0
+
+- 新增 `VERSION` 和 `scripts/sync_version.py`，让当前版本引用可以从单一来源检查或更新。
+- 为 runtime 包新增 `scripts/package_skill.py --verify-source` 和 `--check <install-dir>` 检查。
+- 通过 `templates/lite_plan.md`、`templates/lite_review.md` 和 `init_run.py --mode lite` 增加 Lite Orchestration artifact。
+- 保持 `progress.md` 轻量，并新增 `scripts/status.py` 从 `run_state.json` 生成单屏状态摘要。
+- 为 `lite_plan`、`lite_review` 和 Lite `run_state.json` 增加 validator 支持，并新增 runtime 行为测试。
+- 本版本不加入自动 mode-router evaluation；`references/eval_cases.md` 仍作为人读回归集合。
+
+### v5.7.0
+
+- 为 Full Harness run 新增明确的 State / Memory 边界。
+- 明确 `task_spec.md` 是本地人读计划/spec，`run_state.json` 是机器可读实时状态。
+- 新增 `state_layers`，区分 Working State、Session State、Execution Log 和 Memory Boundary。
+- 新增 `references/state-memory-boundary.md`，并纳入 runtime 打包。
+- 更新校验逻辑，要求 `run_state.json` 包含核心 `state_layers` 结构。
 
 ### v5.6.0
 

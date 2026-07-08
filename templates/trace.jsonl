@@ -4,3 +4,7 @@
 {"ts":"","event":"production_edit_observed","task_id":"","first_production_edit":{"path":"","line":"","ts":""},"after_red":true}
 {"ts":"","event":"tdd_green_observed","task_id":"","tdd_trace_path":"tdd_trace.jsonl","command":"","result":"pass"}
 {"ts":"","event":"review_gate_completed","task_id":"","review_type":"spec_compliance|code_quality","result":"PASS|FAIL|BLOCKED","evidence":""}
+{"ts":"","event":"state_layer_updated","layer":"working_state","task_id":"","fields":["current_task","volatile_notes"],"source":"run_state.json","reason":""}
+{"ts":"","event":"state_layer_updated","layer":"session_state","task_id":"","fields":["active_agents","handoff_notes"],"source":"run_state.json","reason":""}
+{"ts":"","event":"memory_boundary_declared","task_id":"","local_state_sources":["task_spec.md","progress.md","run_state.json","trace.jsonl"],"policy":"","memory_candidates":[],"promotion_required":""}
+{"ts":"","event":"execution_log_appended","task_id":"","source":"trace.jsonl","evidence":"","result":""}

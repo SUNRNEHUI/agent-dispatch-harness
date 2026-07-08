@@ -32,15 +32,13 @@ REQUIRED_SECTIONS = {
         "Residual Risk",
     ],
     "progress": [
-        "Artifact Location",
-        "Current Goal",
+        "Snapshot",
         "Completed",
         "Changed Files",
         "Decisions",
         "Commands And Evidence",
         "Verification",
         "Open Risks",
-        "Stop Conditions Checked",
         "Next Step",
     ],
     "spec": [
@@ -54,6 +52,22 @@ REQUIRED_SECTIONS = {
         "Budget",
         "Stop Conditions",
         "Artifact Location",
+    ],
+    "lite_plan": [
+        "Goal",
+        "Workers",
+        "Merge Plan",
+        "Verification Evidence",
+        "Blocking Issues",
+        "Next Step",
+    ],
+    "lite_review": [
+        "Status",
+        "Scope Reviewed",
+        "Evidence",
+        "Unverified Paths",
+        "Blocking Issues",
+        "Required Fixes",
     ],
 }
 
@@ -85,6 +99,17 @@ VALID_TASK_STATUSES = {
     "cancelled",
     "unplanned",
 }
+VALID_MODES = {"direct", "lite", "full"}
+VALID_LITE_REVIEW_STATUSES = {"pass", "fail", "blocked"}
+VALID_PROGRESS_VERIFICATION_STATUSES = {"pending", "running", "pass", "fail", "blocked"}
+PROGRESS_SNAPSHOT_LABELS = (
+    "stage",
+    "active_task",
+    "owner",
+    "blocker",
+    "verification_status",
+    "next_step",
+)
 VALID_VERIFICATION_GATE_MODES = {
     "strict_tdd",
     "test_first_evidence",
@@ -222,6 +247,42 @@ def validate_evaluator_gate_section(markdown: str) -> list[str]:
     return errors
 
 
+def validate_progress_snapshot(markdown: str) -> list[str]:
+    section_name = "Snapshot"
+    section = extract_section(markdown, section_name)
+    if not section:
+        return [f"missing section: {section_name}"]
+
+    errors: list[str] = []
+    for label in PROGRESS_SNAPSHOT_LABELS:
+        value = extract_label_value(section, label)
+        if value is None:
+            errors.append(f"{section_name}: missing field {label!r}")
+        elif value == "":
+            errors.append(f"{section_name}: field {label!r} must not be empty; use n/a if unknown")
+
+    verification_status = extract_label_value(section, "verification_status")
+    if verification_status and verification_status not in VALID_PROGRESS_VERIFICATION_STATUSES:
+        choices = ", ".join(sorted(VALID_PROGRESS_VERIFICATION_STATUSES))
+        errors.append(f"{section_name}: verification_status must be one of {choices}; got {verification_status!r}")
+    return errors
+
+
+def validate_lite_review_status(markdown: str) -> list[str]:
+    section_name = "Status"
+    section = extract_section(markdown, section_name)
+    if not section:
+        return [f"missing section: {section_name}"]
+
+    status = extract_label_value(section, "status")
+    if status is None:
+        return [f"{section_name}: missing field 'status'"]
+    if status not in VALID_LITE_REVIEW_STATUSES:
+        choices = ", ".join(sorted(VALID_LITE_REVIEW_STATUSES))
+        return [f"{section_name}: status must be one of {choices}; got {status!r}"]
+    return []
+
+
 def validate_verification_gate(value: object, prefix: str) -> list[str]:
     if not isinstance(value, dict):
         return [f"{prefix} must be an object"]
@@ -237,6 +298,75 @@ def validate_verification_gate(value: object, prefix: str) -> list[str]:
     if isinstance(mode, str) and mode not in VALID_VERIFICATION_GATE_MODES:
         choices = ", ".join(sorted(VALID_VERIFICATION_GATE_MODES))
         errors.append(f"{prefix}.mode must be one of {choices}; got {mode!r}")
+    return errors
+
+
+def validate_state_layers(value: object, prefix: str) -> list[str]:
+    if not isinstance(value, dict):
+        return [f"{prefix} must be an object"]
+
+    errors: list[str] = []
+    mode = "full"
+    if isinstance(value.get("_mode"), str):
+        mode = str(value["_mode"])
+
+    if mode == "lite":
+        required_layers = (
+            "working_state",
+            "memory_boundary",
+        )
+    else:
+        required_layers = (
+            "working_state",
+            "session_state",
+            "execution_log",
+            "memory_boundary",
+        )
+    for layer in required_layers:
+        if layer not in value:
+            errors.append(f"{prefix} missing {layer}")
+        elif not isinstance(value[layer], dict):
+            errors.append(f"{prefix}.{layer} must be an object")
+
+    memory_boundary = value.get("memory_boundary")
+    if isinstance(memory_boundary, dict):
+        candidates = memory_boundary.get("memory_candidates")
+        if candidates is None:
+            errors.append(f"{prefix}.memory_boundary missing memory_candidates")
+        elif not isinstance(candidates, list):
+            errors.append(f"{prefix}.memory_boundary.memory_candidates must be a list")
+        if "promotion_required" not in memory_boundary:
+            errors.append(f"{prefix}.memory_boundary missing promotion_required")
+        for forbidden in ("durable_memory", "cross_task_memory"):
+            if forbidden in memory_boundary:
+                errors.append(f"{prefix}.memory_boundary must not contain {forbidden}; use memory_candidates")
+
+    execution_log = value.get("execution_log")
+    if isinstance(execution_log, dict):
+        if mode != "lite":
+            if execution_log.get("trace_path") != "trace.jsonl":
+                errors.append(f"{prefix}.execution_log.trace_path must be 'trace.jsonl'")
+            if execution_log.get("tdd_trace_path") != "tdd_trace.jsonl":
+                errors.append(f"{prefix}.execution_log.tdd_trace_path must be 'tdd_trace.jsonl'")
+            if execution_log.get("append_only") is not True:
+                errors.append(f"{prefix}.execution_log.append_only must be true")
+
+    session_state = value.get("session_state")
+    if mode != "lite" and isinstance(session_state, dict):
+        artifact_paths = session_state.get("artifact_paths")
+        if not isinstance(artifact_paths, dict):
+            errors.append(f"{prefix}.session_state.artifact_paths must be an object")
+        else:
+            expected_paths = {
+                "task_spec": "task_spec.md",
+                "progress": "progress.md",
+                "acceptance_registry": "acceptance_registry.json",
+                "trace": "trace.jsonl",
+                "tdd_trace": "tdd_trace.jsonl",
+            }
+            for key, expected in expected_paths.items():
+                if artifact_paths.get(key) != expected:
+                    errors.append(f"{prefix}.session_state.artifact_paths.{key} must be {expected!r}")
     return errors
 
 
@@ -300,10 +430,25 @@ def validate_run_state(path: Path) -> list[str]:
         return [f"{path.name}: root must be an object"]
     if data.get("version") != 1:
         errors.append(f"{path.name}: version must be 1")
+    mode = data.get("mode", "full")
+    if not isinstance(mode, str):
+        errors.append(f"{path.name}: mode must be a string")
+        mode = "full"
+    elif mode not in VALID_MODES:
+        choices = ", ".join(sorted(VALID_MODES))
+        errors.append(f"{path.name}: mode must be one of {choices}; got {mode!r}")
     if not isinstance(data.get("status"), str):
         errors.append(f"{path.name}: status must be a string")
     elif data["status"] not in VALID_RUN_STATUSES:
         errors.append(f"{path.name}: unsupported status {data['status']!r}")
+    if "state_layers" in data:
+        state_layers = data["state_layers"]
+        if isinstance(state_layers, dict):
+            state_layers = dict(state_layers)
+            state_layers["_mode"] = mode
+        errors.extend(validate_state_layers(state_layers, f"{path.name}: state_layers"))
+    else:
+        errors.append(f"{path.name}: missing state_layers")
 
     stages = data.get("stages")
     tasks = data.get("tasks")
@@ -416,8 +561,15 @@ def main() -> int:
         errors.extend(validate_evaluator_gate_section(markdown))
     elif args.type == "subagent":
         errors.extend(validate_tdd_report_section(markdown))
+    elif args.type == "progress":
+        errors.extend(validate_progress_snapshot(markdown))
+    elif args.type == "lite_review":
+        result = extract_result(markdown)
+        if result is not None and result not in VALID_RESULTS:
+            errors.append(f"Result must be one of {', '.join(sorted(VALID_RESULTS))}; got {result!r}")
+        errors.extend(validate_lite_review_status(markdown))
 
-    if args.type in {"progress", "evaluator", "spec"}:
+    if args.type in {"progress", "evaluator", "spec", "lite_plan", "lite_review"}:
         errors.extend(validate_protocol_files(path.parent))
 
     if errors:

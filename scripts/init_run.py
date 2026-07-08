@@ -17,6 +17,10 @@ TEMPLATE_MAP = {
     "evaluator_report.md": "evaluator_report.md",
 }
 
+LITE_TEMPLATE_MAP = {
+    "lite_plan.md": "lite_plan.md",
+}
+
 
 def slugify(value: str) -> str:
     value = value.strip().lower()
@@ -93,14 +97,68 @@ def default_tdd_cycle_context() -> dict[str, object]:
     }
 
 
+def default_state_layers(mode: str = "full") -> dict[str, object]:
+    if mode == "lite":
+        return {
+            "working_state": {
+                "current_stage": "1",
+                "current_task": "",
+                "active_blockers": [],
+                "updated_at": "",
+            },
+            "memory_boundary": {
+                "policy": "Do not write cross-task memory into run artifacts by default.",
+                "memory_candidates": [],
+                "promotion_required": "user_approval_or_project_doc_update",
+            },
+        }
+
+    return {
+        "working_state": {
+            "current_stage": "1",
+            "current_task": "",
+            "active_blockers": [],
+            "volatile_notes": [],
+            "updated_at": "",
+        },
+        "session_state": {
+            "shared_decisions": [],
+            "shared_assumptions": [],
+            "artifact_paths": {
+                "task_spec": "task_spec.md",
+                "progress": "progress.md",
+                "acceptance_registry": "acceptance_registry.json",
+                "trace": "trace.jsonl",
+                "tdd_trace": "tdd_trace.jsonl",
+            },
+            "delegation_state": [],
+        },
+        "execution_log": {
+            "trace_path": "trace.jsonl",
+            "tdd_trace_path": "tdd_trace.jsonl",
+            "append_only": True,
+        },
+        "memory_boundary": {
+            "policy": "Do not write cross-task memory into run artifacts by default.",
+            "memory_candidates": [],
+            "promotion_required": "user_approval_or_project_doc_update",
+        },
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Create a multi-agent artifact directory from templates.")
     parser.add_argument("--project-root", default=".", help="Project root where workspace/<slug> will be created.")
     parser.add_argument("--slug", help="Stable task slug. Derived from --title when omitted.")
     parser.add_argument("--title", default="multi-agent-task", help="Human-readable task title.")
     parser.add_argument("--agents", default="", help="Comma-separated agent task names, e.g. frontend,backend,tests.")
+    parser.add_argument("--mode", choices=("direct", "lite", "full"), default="full", help="Artifact mode to initialize.")
     parser.add_argument("--force", action="store_true", help="Overwrite existing generated files.")
     args = parser.parse_args()
+
+    if args.mode == "direct":
+        print("Direct mode does not need orchestration artifacts.")
+        return 0
 
     project_root = Path(args.project_root).resolve()
     slug = slugify(args.slug or args.title)
@@ -110,7 +168,8 @@ def main() -> int:
     created = []
     skipped = []
 
-    for template_name, output_name in TEMPLATE_MAP.items():
+    template_map = LITE_TEMPLATE_MAP if args.mode == "lite" else TEMPLATE_MAP
+    for template_name, output_name in template_map.items():
         output_path = artifact_dir / output_name
         if copy_template(template_dir, template_name, output_path, args.force):
             created.append(output_path)
@@ -118,12 +177,13 @@ def main() -> int:
             skipped.append(output_path)
 
     agents = [slugify(item) for item in args.agents.split(",") if item.strip()]
-    for index, agent in enumerate(agents, start=1):
-        output_path = artifact_dir / "tasks" / f"1.{index}-{agent}.md"
-        if write_task_from_template(template_dir, output_path, agent, index, args.force):
-            created.append(output_path)
-        else:
-            skipped.append(output_path)
+    if args.mode == "full":
+        for index, agent in enumerate(agents, start=1):
+            output_path = artifact_dir / "tasks" / f"1.{index}-{agent}.md"
+            if write_task_from_template(template_dir, output_path, agent, index, args.force):
+                created.append(output_path)
+            else:
+                skipped.append(output_path)
 
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     task_items = [
@@ -134,8 +194,8 @@ def main() -> int:
             "status": "planned",
             "owner": agent,
             "allowed_scope": [],
-            "task_path": f"tasks/1.{index}-{agent}.md",
-            "report_path": f"1.{index}-{agent}-report.md",
+            "task_path": f"tasks/1.{index}-{agent}.md" if args.mode == "full" else "",
+            "report_path": f"1.{index}-{agent}-report.md" if args.mode == "full" else "",
             "dependencies": [],
             "expected_outputs": [],
             "verification": [],
@@ -159,77 +219,109 @@ def main() -> int:
         }
     ]
 
-    generated_files = [
-        "task_spec.md",
-        "progress.md",
-        "evaluator_report.md",
-        "capability_snapshot.md",
-        "acceptance_registry.json",
-        "trace.jsonl",
-        "tdd_trace.jsonl",
-        "run_state.json",
-    ]
-    generated_files.extend(item["task_path"] for item in task_items)
+    if args.mode == "lite":
+        generated_files = [
+            "lite_plan.md",
+            "run_state.json",
+        ]
+    else:
+        generated_files = [
+            "task_spec.md",
+            "progress.md",
+            "evaluator_report.md",
+            "capability_snapshot.md",
+            "acceptance_registry.json",
+            "trace.jsonl",
+            "tdd_trace.jsonl",
+            "run_state.json",
+        ]
+    generated_files.extend(item["task_path"] for item in task_items if item["task_path"])
 
-    protocol_files = {
-        "capability_snapshot.md": (
-            "# Capability Snapshot\n\n"
-            f"- created_at: {now}\n"
-            f"- title: {args.title}\n"
-            "- delegation_mechanism:\n"
-            "- available_tools:\n"
-            "- unavailable_tools:\n"
-            "- constraints:\n"
-            "- verification_environment:\n"
-        ),
-        "acceptance_registry.json": {
-            "version": 1,
-            "created_at": now,
-            "title": args.title,
-            "tdd_trace_path": "tdd_trace.jsonl",
-            "criteria": [
-                {
-                    "id": "AC-001",
-                    "description": "",
-                    "status": "pending",
-                    "required_evidence": [],
-                    "evidence": [],
-                    "owner": "main-agent",
-                    "verification_gate": default_verification_gate(),
-                    "linked_tasks": [item["id"] for item in task_items],
-                    "blocking_issues": [],
-                }
-            ],
-        },
-        "trace.jsonl": json.dumps(
-            {
-                "ts": now,
-                "event": "run_initialized",
-                "artifact_dir": str(artifact_dir),
+    if args.mode == "lite":
+        protocol_files = {
+            "run_state.json": {
+                "version": 1,
+                "created_at": now,
+                "updated_at": now,
                 "title": args.title,
-                "agents": agents,
+                "mode": "lite",
+                "artifact_dir": str(artifact_dir),
+                "state_layers": default_state_layers(mode="lite"),
+                "status": "intake",
+                "current_stage": "1" if stage_items else "",
+                "stages": stage_items,
+                "tasks": task_items,
+                "generated_files": generated_files,
+                "stop_reason": "",
             },
-            ensure_ascii=False,
-        )
-        + "\n",
-        "tdd_trace.jsonl": "",
-        "run_state.json": {
-            "version": 1,
-            "created_at": now,
-            "updated_at": now,
-            "title": args.title,
-            "artifact_dir": str(artifact_dir),
-            "trace_path": "trace.jsonl",
-            "tdd_trace_path": "tdd_trace.jsonl",
-            "tdd_current_cycle_context": default_tdd_cycle_context(),
-            "status": "intake",
-            "current_stage": "1" if stage_items else "",
-            "stages": stage_items,
-            "tasks": task_items,
-            "generated_files": generated_files,
-            "stop_reason": "",
-        },
-    }
+        }
+    else:
+        protocol_files = {
+            "capability_snapshot.md": (
+                "# Capability Snapshot\n\n"
+                f"- created_at: {now}\n"
+                f"- title: {args.title}\n"
+                "- delegation_mechanism:\n"
+                "- available_tools:\n"
+                "- unavailable_tools:\n"
+                "- constraints:\n"
+                "- verification_environment:\n"
+                "- state_layers:\n"
+                "  - working_state: current stage/task only\n"
+                "  - session_state: run-scoped shared decisions and assumptions\n"
+                "  - execution_log: append-only trace files\n"
+                "  - memory_boundary: candidates only; no automatic memory promotion\n"
+            ),
+            "acceptance_registry.json": {
+                "version": 1,
+                "created_at": now,
+                "title": args.title,
+                "tdd_trace_path": "tdd_trace.jsonl",
+                "criteria": [
+                    {
+                        "id": "AC-001",
+                        "description": "",
+                        "status": "pending",
+                        "required_evidence": [],
+                        "evidence": [],
+                        "owner": "main-agent",
+                        "verification_gate": default_verification_gate(),
+                        "linked_tasks": [item["id"] for item in task_items],
+                        "blocking_issues": [],
+                    }
+                ],
+            },
+            "trace.jsonl": json.dumps(
+                {
+                    "ts": now,
+                    "event": "run_initialized",
+                    "artifact_dir": str(artifact_dir),
+                    "title": args.title,
+                    "agents": agents,
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            "tdd_trace.jsonl": "",
+            "run_state.json": {
+                "version": 1,
+                "created_at": now,
+                "updated_at": now,
+                "title": args.title,
+                "mode": "full",
+                "artifact_dir": str(artifact_dir),
+                "trace_path": "trace.jsonl",
+                "tdd_trace_path": "tdd_trace.jsonl",
+                "state_layers": default_state_layers(mode="full"),
+                "tdd_current_cycle_context": default_tdd_cycle_context(),
+                "status": "intake",
+                "current_stage": "1" if stage_items else "",
+                "stages": stage_items,
+                "tasks": task_items,
+                "generated_files": generated_files,
+                "stop_reason": "",
+            },
+        }
 
     for output_name, content in protocol_files.items():
         output_path = artifact_dir / output_name
