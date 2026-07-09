@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness, formerly Multi-Agent Dispatcher, is an agent skill for routing explicit multi-agent requests into the smallest execution mode that can complete the work reliably. It avoids unnecessary delegation for small tasks and provides a durable harness for long, risky, resumable, evidence-verified work.
 
-Current version: **v5.8.0** · 2026-07-08
+Current version: **v5.9.0** · 2026-07-09
 
 ---
 
@@ -381,6 +381,15 @@ Mode selection always runs first. Supporting methods are applied only when they 
 ---
 
 ## Release History
+
+### v5.9.0
+
+- Added a proportional Completion Confidence Loop to check final claims against fresh evidence before handoff.
+- Expanded Verification and Evaluator guidance to expose missing checks, stale evidence, stubs, TODOs, mocks, and unverified critical paths.
+- Enhanced `scripts/status.py` with task completion, acceptance rollup, evidence-gap detection, confidence bands, and next-verification guidance.
+- Added lightweight confidence and evidence-gap prompts to the progress ledger and Lite plan templates.
+- Preserved right-sized execution: Direct remains artifact-free, Lite remains compact, and Full remains the durable protocol for high-risk or resumable work.
+- Added no new artifact type.
 
 ### v5.8.0
 

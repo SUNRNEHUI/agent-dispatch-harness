@@ -31,6 +31,9 @@ Use for: frontend slice, backend slice, tests slice, migration slice, docs slice
 - Does not explain away missing evidence.
 - Must be allowed to return FAIL.
 - Checks for stubs, TODOs, mocks, UI/browser gaps, and missing readback.
+- Runs an independent completion-confidence check: compare the proposed final claim against the freshest evidence, name evidence gaps, and return `high`, `medium`, `low`, or `blocked` confidence.
+- Treats worker self-assessment, stale evidence, missing browser/readback checks, stubs, TODOs, mocks, and unverified critical paths as confidence reducers.
+- Must not force Direct or Lite work into Full Harness ceremony; use the evidence available for the selected mode unless the risk itself justifies escalation.
 
 Use for: user-facing workflows, high-risk changes, release gates, broad UI changes.
 

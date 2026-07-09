@@ -318,6 +318,12 @@ Reject outputs that package stubs, TODOs, mocks, or untested critical paths as c
 
 Before claiming completion, the manager must inspect the relevant diff or output, run or review the freshest available verification evidence, and state any unverified paths. Sub-agent self-assessment is never enough.
 
+Run a completion-confidence loop before the final claim: state the completion claim, inspect the freshest available evidence, identify missing checks, stubs, TODOs, mocks, stale reports, and unverified critical paths, then assign `high`, `medium`, `low`, or `blocked` confidence.
+
+Confidence is not a substitute for evidence. `high` requires required evidence to pass with no material unverified path. `medium` is allowed only when remaining gaps are non-critical and disclosed. `low` or `blocked` means the manager must not claim completion; run the missing check, create a repair or decision item, or hand off as blocked.
+
+Keep this loop proportional to the selected mode. Direct mode may disclose it only in the final response. Lite Orchestration may record it as compact verification notes. Full Harness should map it to acceptance records, trace, progress, and evaluator output when those artifacts exist. Do not create Full artifacts solely to record confidence.
+
 For full artifact mode:
 
 - Every acceptance criterion in `acceptance_registry.json` must be `pass`, `blocked`, or `scoped_out` before final handoff.
@@ -373,4 +379,4 @@ End with:
 
 ---
 
-*Agent Dispatch Harness v5.8.0 | 2026-07-08*
+*Agent Dispatch Harness v5.9.0 | 2026-07-09*

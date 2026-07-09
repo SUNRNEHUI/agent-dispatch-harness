@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness，原名 Multi-Agent Dispatcher，是面向 AI 编码代理的 skill，用于把明确的多智能体请求路由到最合适的执行模式。它避免小任务过度调度，并为长任务、高风险任务、可续跑任务和需要证据验收的任务提供持久化 harness。
 
-当前版本：**v5.8.0** · 2026-07-08
+当前版本：**v5.9.0** · 2026-07-09
 
 ---
 
@@ -381,6 +381,15 @@ Superpowers-style methods = 可选的工程支持方法
 ---
 
 ## 版本历史
+
+### v5.9.0
+
+- 新增按模式成比例执行的 Completion Confidence Loop，在最终交付前把完成声明映射到最新证据。
+- 扩展 Verification 和 Evaluator 指导，要求暴露缺失检查、过期证据、stub、TODO、mock 和未验证关键路径。
+- 增强 `scripts/status.py`，输出任务完成度、验收汇总、证据缺口、置信度档位和下一步验证建议。
+- 在 progress ledger 和 Lite plan 模板中增加轻量的 confidence 与 evidence gap 提示。
+- 保持执行模式按需收敛：Direct 仍不创建 artifact，Lite 仍保持紧凑，Full 仍用于高风险或可续跑任务的持久化协议。
+- 未新增 artifact 类型。
 
 ### v5.8.0
 
