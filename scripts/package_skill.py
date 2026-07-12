@@ -29,6 +29,8 @@ RUNTIME_FILES = [
     "references/tdd-gates.md",
     "scripts/init_run.py",
     "scripts/harness_test_run.py",
+    "scripts/runtime_state.py",
+    "scripts/validate_workspace.py",
     "scripts/status.py",
     "scripts/tdd_gate_check.py",
     "scripts/validate_report.py",

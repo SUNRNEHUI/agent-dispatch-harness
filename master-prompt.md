@@ -221,6 +221,8 @@ End with:
 - Residual risks.
 - Next step.
 
+Global state and trace are manager-owned through a cooperative runtime guard, not an OS-user security boundary. Verification commands use a 1800-second default timeout and record timeout evidence; timeout must be <= runtime budget.
+
 ---
 
 *Master Agent Prompt v5.3.0 | 2026-06-12*

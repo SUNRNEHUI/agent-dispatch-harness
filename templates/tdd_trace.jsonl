@@ -1,6 +1,3 @@
-{"ts":"","event":"gate_decision","task_id":"","gate_mode":"","reason":"","source":"harness_test_run","wrapper_version":1}
-{"ts":"","event":"test_run","task_id":"","phase":"","command":"","result":"","exit_code":0,"stdout_tail":"","stderr_tail":"","summary":"","source":"harness_test_run","wrapper_version":1}
-{"ts":"","event":"file_modified","task_id":"","path":"","summary":""}
-{"ts":"","event":"substitute_check","task_id":"","phase":"","command":"","result":"","exit_code":0,"stdout_tail":"","stderr_tail":"","no_test_reason":"","summary":"","source":"harness_test_run","wrapper_version":1}
-{"ts":"","event":"review_result","task_id":"","result":"","summary":""}
-{"ts":"","event":"verification_complete","task_id":"","result":"","summary":""}
+{"event":"gate_decision","gate_mode":"test_first_evidence","reason":"template example"}
+{"event":"test_run","phase":"RED","result":"FAIL","summary":"expected failing test"}
+{"event":"test_run","phase":"GREEN","result":"PASS","summary":"implemented behavior"}

@@ -68,7 +68,7 @@ python3 scripts/package_skill.py --output /tmp/agent-dispatch-harness-runtime --
 如果改动影响 TDD trace：
 
 ```bash
-python3 scripts/tdd_gate_check.py --trace templates/tdd_trace.jsonl
+python3 scripts/tdd_gate_check.py templates/tdd_trace.jsonl
 ```
 
 如果同步本地安装：

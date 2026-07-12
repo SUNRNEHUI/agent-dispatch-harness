@@ -495,6 +495,13 @@ def validate_run_state(path: Path) -> list[str]:
             errors.extend(validate_verification_gate(item["verification_gate"], f"{prefix}.verification_gate"))
         if "retry_count" in item and not isinstance(item["retry_count"], int):
             errors.append(f"{prefix}.retry_count must be an integer")
+        budget = item.get("runtime_budget_seconds")
+        if budget is not None:
+            if not isinstance(budget, (int, float)) or isinstance(budget, bool) or budget <= 0 or not __import__("math").isfinite(budget):
+                errors.append(f"{prefix}.runtime_budget_seconds must be a positive finite number")
+        for key in ("required_cwd", "repository_root", "required_branch"):
+            if key in item and not isinstance(item[key], str):
+                errors.append(f"{prefix}.{key} must be a string")
 
     for index, item in enumerate(stages, start=1):
         prefix = f"{path.name}: stages[{index}]"

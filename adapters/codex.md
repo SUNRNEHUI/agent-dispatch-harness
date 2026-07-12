@@ -101,3 +101,5 @@ For complex runs, keep trace in the progress ledger or a dedicated trace file un
 - budget breaker events
 
 The final response should summarize evidence, not replace the trace.
+
+Codex workers follow the cooperative protocol and keep writes task-local. The API guard is not a same-user security boundary; native sandbox/OS permissions provide isolation. Managers independently provide `--workspace` for git-based binding validation.
