@@ -474,6 +474,8 @@ Superpowers-style methods = 可选的工程支持方法
 
 ---
 
+运行时协调使用 cooperative manager-only state/trace API guard、JSON 原子替换、JSONL 加锁追加，并从独立 git 环境读取 workspace identity。该 guard 可被同一用户进程直接写文件绕过；隔离依赖 native sandbox/OS permissions。验证默认 1800 秒，且 timeout 必须不超过 runtime budget。
+
 ## 许可证
 
 当前仓库尚未包含 license 文件。

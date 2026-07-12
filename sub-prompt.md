@@ -36,6 +36,8 @@ If these are missing or contradictory, return `需要决策` instead of guessing
 8. Write a report to the requested path.
 9. Do not mark your slice complete without concrete evidence. If evidence is unavailable, return `需要决策` or `失败`.
 
+For runtime state and trace writes, workers must never write global state or global trace; they may write only task-local artifacts and must obey the manager-provided workspace binding. This is a cooperative guard for same-user agents, not a security boundary; native sandboxing or OS permissions are required for adversarial identity isolation.
+
 ## Required Report Shape
 
 Use `templates/subagent_report.md` or include these sections:

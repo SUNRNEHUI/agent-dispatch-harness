@@ -377,6 +377,10 @@ End with:
 - Use `templates/lite_plan.md`, `templates/lite_review.md`, `templates/task_spec.md`, `templates/progress_ledger.md`, `templates/subagent_task.md`, `templates/subagent_report.md`, and `templates/evaluator_report.md` when scripts are not suitable.
 - Use `templates/tdd_trace.jsonl` as the starting trace format for TDD runtime evidence when present.
 
+### Native Runtime Alignment
+
+Global state and traces are manager-owned through a cooperative API guard, not a same-user security boundary; direct file writes remain possible and isolation depends on native sandbox/OS permissions. Runtime JSON writes are atomic and JSONL appends are locked. Workers write task-local artifacts only by protocol. `harness_test_run.py` defaults to 1800 seconds and requires timeout <= runtime budget; validate task workspace bindings with `validate_workspace.py --workspace`.
+
 ---
 
 *Agent Dispatch Harness v5.9.0 | 2026-07-09*

@@ -202,6 +202,10 @@ def main() -> int:
             "verification_gate": default_verification_gate(),
             "retry_count": 0,
             "budget": "",
+            "runtime_budget_seconds": 1800,
+            "required_cwd": "",
+            "repository_root": "",
+            "required_branch": "",
             "evidence": [],
             "stop_reason": "",
         }

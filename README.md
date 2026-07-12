@@ -177,6 +177,8 @@ python3 scripts/package_skill.py --check ~/.codex/skills/agent-dispatch-harness
 
 The runtime package contains only the files needed by the skill at execution time.
 
+Runtime coordination uses a cooperative manager-only state/trace API guard, atomic JSON replacement, locked JSONL appends, and workspace identity read independently from git. This guard can be bypassed by a same-user process writing files directly; isolation depends on native sandbox/OS permissions. Verification defaults to 1800 seconds and requires timeout <= runtime budget.
+
 ---
 
 ## Migration From Earlier Names
