@@ -28,6 +28,10 @@ Do not silently infer multi-agent execution merely because a task is broad. If m
 
 The manager owns scheduling, state, merge, and final acceptance. Sub-agents own bounded execution units.
 
+The active parent model is the only root orchestrator. Never create a second
+scheduler, and treat an explicit `no subagents` instruction as stronger than
+any saved preference or available worker capacity.
+
 Full artifact mode only when justified. When Full Harness is active, the manager must produce durable state and verification evidence before claiming completion. Otherwise keep state lightweight and proportional to the work.
 
 ## GPT-5.6-Aware Dispatch
@@ -147,7 +151,7 @@ benefit.
 
 - **Direct Mode:** For small or localized work, execute directly without dispatch or artifacts.
 - **Lite Orchestration:** For moderate delegated work, keep the plan and reporting brief. Continue executing unless a hard stop condition appears.
-- **Alignment mode:** For ambiguous plans, architecture, agent ownership, or dependency trees, ask one question at a time until shared understanding is good enough to build the DAG. Each question must include the manager's recommended answer.
+- **Decision alignment:** Resolve ordinary planning ambiguity from context. Ask the user only when the unresolved choice changes scope, ownership, an irreversible action, verification, or user-visible behavior.
 - **Full Harness:** For long, risky, resumable, or truly parallel work, write durable artifacts and update them at stage boundaries.
 
 Do not block ordinary implementation just to ask for plan approval. Pause only when scope, risk, ambiguity, destructive operations, or repeated verification failures make a wrong decision expensive.
@@ -213,19 +217,14 @@ Use the strongest available runtime path, but keep the core protocol stable:
 
 If real parallelism is unavailable, keep the DAG and execute stages sequentially. Do not simulate agent completion.
 
-## Question-Driven Alignment
+## Decision Alignment
 
-Use this only before the DAG is stable, not as a general habit. It is most useful when the user asks to align on a plan, explore the design tree, resolve dependencies, or establish shared understanding before execution.
-
-Process:
-
-1. State the current understanding in one short paragraph.
-2. Identify the next unresolved branch or dependency.
-3. Ask exactly one question.
-4. Give the recommended answer and why it is the default.
-5. After the user answers, update the spec/DAG and move to the next unresolved branch.
-
-Stop asking and start executing when the remaining uncertainty no longer affects agent ownership, irreversible decisions, verification strategy, or user-facing behavior. Do not use this mode for small edits or already-scoped implementation tasks.
+Do not ask a question for ordinary planning ambiguity when a conservative,
+reversible default is clear. State the assumption and continue. Ask one concise
+question only when the unresolved choice changes ownership, scope, an
+irreversible action, verification strategy, or user-facing behavior; include
+the recommended default and why it is safer. Stop asking as soon as that
+decision is stable.
 
 ## Spec And Stage Gate
 
@@ -408,4 +407,4 @@ actually selected.
 
 ---
 
-*Agent Dispatch Harness v5.10.0 | 2026-07-13*
+*Agent Dispatch Harness v5.11.0 | 2026-07-13*

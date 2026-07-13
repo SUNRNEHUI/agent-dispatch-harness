@@ -53,6 +53,21 @@ fill every slot. The task budget remains the source of truth for fan-out.
 - Return compact summaries and durable report paths; do not send raw logs to the
   manager unless a failure or acceptance criterion requires them.
 
+## Truthful Route States
+
+Keep the requested route separate from what the runtime proved:
+
+- `requested`: the manager asked for a model or reasoning override;
+- `accepted`: the active tool accepted the exact override;
+- `used and confirmed`: runtime metadata proves the child model/provider/effort;
+- `inherited root`: the override was unavailable or not accepted, so the child
+  used the inherited configuration.
+
+Child prose, prompt text, or a model name in a report is not runtime proof.
+Direct model overrides keep the parent provider; a different provider requires
+an already configured, authenticated, provider-pinned agent. Never weaken
+permissions or claim a cross-provider route from a prompt preference alone.
+
 ## Measurement
 
 Do not claim token or cost savings from this policy alone. When runtime metrics

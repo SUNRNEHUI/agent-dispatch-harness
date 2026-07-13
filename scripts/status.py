@@ -198,6 +198,39 @@ def next_verification(
     return "none"
 
 
+def status_confidence(data: dict[str, object], state_path: Path) -> str:
+    mode = str(data.get("mode") or "full")
+    status = str(data.get("status") or "unknown")
+    raw_tasks = data.get("tasks")
+    tasks = raw_tasks if isinstance(raw_tasks, list) else []
+    raw_stages = data.get("stages")
+    stages = raw_stages if isinstance(raw_stages, list) else []
+    registry_status = "not_applicable"
+    registry: dict[str, object] | None = None
+    if mode == "full":
+        registry_status, registry = load_acceptance_registry(state_path.parent / "acceptance_registry.json")
+    acceptance_counts, acceptance_gaps, registry_error = acceptance_rollup(registry)
+    blockers = [
+        *task_blockers(tasks),
+        *resource_budget_blockers(tasks),
+        *resource_budget_blockers(stages, "stage"),
+    ]
+    conflicts = accepted_state_conflicts(status, acceptance_counts, registry_error)
+    evidence_gaps = [*task_evidence_gaps(tasks), *acceptance_gaps]
+    done, total = task_completion(tasks)
+    return confidence_level(
+        mode,
+        registry_status,
+        acceptance_counts,
+        blockers,
+        conflicts,
+        evidence_gaps,
+        registry_error,
+        done,
+        total,
+    )
+
+
 def format_status(data: dict[str, object], state_path: Path | None = None) -> str:
     title = str(data.get("title") or "untitled")
     mode = str(data.get("mode") or "full")
@@ -310,12 +343,21 @@ def format_status(data: dict[str, object], state_path: Path | None = None) -> st
 def main() -> int:
     parser = argparse.ArgumentParser(description="Print a compact run status from run_state.json.")
     parser.add_argument("path", type=Path, help="Path to run_state.json")
+    parser.add_argument(
+        "--require-high-confidence",
+        action="store_true",
+        help="Exit nonzero unless the run reaches high completion confidence.",
+    )
     args = parser.parse_args()
 
-    data = load_state(args.path.expanduser().resolve())
     path = args.path.expanduser().resolve()
     data = load_state(path)
     print(format_status(data, path))
+    if args.require_high_confidence:
+        confidence = status_confidence(data, path)
+        if confidence != "high":
+            print("Status gate: requires high completion confidence")
+            return 1
     return 0
 
 

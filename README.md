@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness, formerly Multi-Agent Dispatcher, is an agent skill for routing explicit multi-agent requests into the smallest execution mode that can complete the work reliably. It avoids unnecessary delegation for small tasks and provides a durable harness for long, risky, resumable, evidence-verified work.
 
-Current version: **v5.10.0** · 2026-07-13
+Current version: **v5.11.0** · 2026-07-13
 
 ---
 
@@ -331,6 +331,12 @@ python3 scripts/harness_test_run.py \
 
 For strict TDD cycles, `tdd_gate_check.py --source-path <file>` can add filesystem mtime checks for the files changed in that cycle.
 
+For CI or release gates, require the run to reach high completion confidence:
+
+```bash
+python3 scripts/status.py <artifact-dir>/run_state.json --require-high-confidence
+```
+
 ---
 
 ## Repository Layout
@@ -383,6 +389,13 @@ Mode selection always runs first. Supporting methods are applied only when they 
 ---
 
 ## Release History
+
+### v5.11.0
+
+- Compared the harness with `Cjbuilds/Codex-Orchestration` and documented which thin-routing ideas are adopted and which high-overhead bridges and ceremony are explicitly excluded.
+- Kept the active parent model as the only root orchestrator, made explicit `no subagents` instructions authoritative, and tightened truthful model-route states.
+- Added `scripts/status.py --require-high-confidence` for CI or release gates while preserving the default compact human-readable status output.
+- Reduced default alignment questioning to irreversible or acceptance-relevant decisions; ordinary ambiguity now uses a stated reversible assumption.
 
 ### v5.10.0
 

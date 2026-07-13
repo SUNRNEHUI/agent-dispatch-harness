@@ -545,6 +545,62 @@ def test_validator_rejects_accepted_unknown_budget() -> None:
         shutil.rmtree(temp)
 
 
+def test_status_require_high_confidence_gate() -> None:
+    temp, artifact_dir = full_artifact("strict status gate")
+    try:
+        mark_full_passed(artifact_dir)
+        passed = run(
+            [
+                "python3",
+                "scripts/status.py",
+                str(artifact_dir / "run_state.json"),
+                "--require-high-confidence",
+            ],
+            check=False,
+        )
+        assert_true(passed.returncode == 0, passed.stdout)
+        assert_true("Completion confidence: high" in passed.stdout, passed.stdout)
+
+        registry = load_json(artifact_dir / "acceptance_registry.json")
+        registry["criteria"][0]["status"] = "pending"
+        registry["criteria"][0]["evidence"] = []
+        write_json(artifact_dir / "acceptance_registry.json", registry)
+        blocked = run(
+            [
+                "python3",
+                "scripts/status.py",
+                str(artifact_dir / "run_state.json"),
+                "--require-high-confidence",
+            ],
+            check=False,
+        )
+        assert_true(blocked.returncode == 1, blocked.stdout)
+        assert_true("Completion confidence: blocked" in blocked.stdout, blocked.stdout)
+        assert_true("requires high completion confidence" in blocked.stdout, blocked.stdout)
+    finally:
+        shutil.rmtree(temp)
+
+
+def test_codex_orchestration_review_records_adopted_and_removed_patterns() -> None:
+    review = (ROOT / "docs" / "codex-orchestration-review.md").read_text(encoding="utf-8")
+    for term in (
+        "单一 root",
+        "no subagents",
+        "真实路由状态",
+        "取消",
+        "第二个 orchestrator",
+        "跨 provider bridge",
+        "Full artifact",
+    ):
+        assert_true(term in review, f"comparison review missing {term!r}")
+
+
+def test_alignment_is_not_a_default_user_question_loop() -> None:
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    assert_true("Do not ask a question for ordinary planning ambiguity" in skill, skill)
+    assert_true("only when the unresolved choice changes" in skill, skill)
+
+
 def main() -> int:
     tests = [
         test_progress_template_is_lightweight,
@@ -570,6 +626,9 @@ def main() -> int:
         test_validator_rejects_accepted_exhausted_budget,
         test_status_blocks_unknown_configured_task_and_stage_budget,
         test_validator_rejects_accepted_unknown_budget,
+        test_status_require_high_confidence_gate,
+        test_codex_orchestration_review_records_adopted_and_removed_patterns,
+        test_alignment_is_not_a_default_user_question_loop,
     ]
     for test in tests:
         test()

@@ -103,17 +103,14 @@ python3 <skill-dir>/scripts/init_run.py --project-root <project> --title "<task 
 
 Full Harness must include durable state: `capability_snapshot.md`, `run_state.json`, `acceptance_registry.json`, `progress.md`, `trace.jsonl`, reports, and evaluator output when needed.
 
-## Alignment Mode
+## Decision Alignment
 
-Use only when the plan, ownership, dependency tree, or user-facing goal is not stable enough to build the DAG.
-
-Rules:
-
-1. State current understanding briefly.
-2. Ask exactly one question.
-3. Include your recommended answer and why it is the default.
-4. Update the spec/DAG after the answer.
-5. Stop asking when remaining uncertainty no longer affects ownership, irreversible decisions, verification, or user-facing behavior.
+Do not ask a question for ordinary planning ambiguity when a conservative,
+reversible default is clear. State the assumption and continue. Ask one concise
+question only when the unresolved choice changes ownership, scope, an
+irreversible action, verification strategy, or user-facing behavior; include
+the recommended default and why it is safer. Stop asking as soon as that
+decision is stable.
 
 ## DAG And Ownership
 

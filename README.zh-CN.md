@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness，原名 Multi-Agent Dispatcher，是面向 AI 编码代理的 skill，用于把明确的多智能体请求路由到最合适的执行模式。它避免小任务过度调度，并为长任务、高风险任务、可续跑任务和需要证据验收的任务提供持久化 harness。
 
-当前版本：**v5.10.0** · 2026-07-13
+当前版本：**v5.11.0** · 2026-07-13
 
 ---
 
@@ -331,6 +331,12 @@ python3 scripts/harness_test_run.py \
 
 对于 strict TDD 循环，可以使用 `tdd_gate_check.py --source-path <file>` 为当前循环改动的源文件增加文件系统 mtime 校验。
 
+对于 CI 或发布 gate，可以要求 run 达到 high completion confidence：
+
+```bash
+python3 scripts/status.py <artifact-dir>/run_state.json --require-high-confidence
+```
+
 ---
 
 ## 仓库结构
@@ -383,6 +389,13 @@ Superpowers-style methods = 可选的工程支持方法
 ---
 
 ## 版本历史
+
+### v5.11.0
+
+- 对照 `Cjbuilds/Codex-Orchestration`，记录吸收的薄路由思路，以及明确取消或不引入的高开销 bridge 和 ceremony。
+- 保持当前父任务模型为唯一 root orchestrator，让显式 `no subagents` 指令拥有最高优先级，并收紧真实模型路由状态的表达。
+- 新增 `scripts/status.py --require-high-confidence`，供 CI 或发布 gate 使用；默认人读状态输出保持不变。
+- 将默认对齐提问收敛到不可逆或影响验收的决策；普通歧义改为说明可回滚假设后继续执行。
 
 ### v5.10.0
 
