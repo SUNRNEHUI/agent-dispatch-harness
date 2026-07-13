@@ -61,6 +61,14 @@
       "status": "planned",
       "tasks": [],
       "budget": "",
+      "resource_budget": {
+        "token_budget": null,
+        "tokens_used": null,
+        "tokens_remaining": null,
+        "usage_kind": "unknown",
+        "accounting_note": "Token counters unavailable; do not infer tokens from characters.",
+        "exhaustion_action": "stop_and_record_decision"
+      },
       "evidence": [],
       "stop_reason": ""
     }
@@ -92,6 +100,14 @@
     },
     "retry_count": 0,
     "budget": "",
+    "resource_budget": {
+      "token_budget": null,
+      "tokens_used": null,
+      "tokens_remaining": null,
+      "usage_kind": "unknown",
+      "accounting_note": "Token counters unavailable; do not infer tokens from characters.",
+      "exhaustion_action": "stop_and_record_decision"
+    },
     "evidence": [],
     "stop_reason": ""
   },

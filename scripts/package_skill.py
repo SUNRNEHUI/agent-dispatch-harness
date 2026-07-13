@@ -22,6 +22,7 @@ RUNTIME_FILES = [
     "references/eval_cases.md",
     "references/feature-spec-lane.md",
     "references/harness-protocol.md",
+    "references/model-routing.md",
     "references/roles.md",
     "references/state-memory-boundary.md",
     "references/stop-conditions.md",

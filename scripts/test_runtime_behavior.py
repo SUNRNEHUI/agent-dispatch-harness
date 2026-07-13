@@ -325,6 +325,226 @@ def test_negative_validators_and_package_check() -> None:
         shutil.rmtree(temp)
 
 
+def test_gpt56_routing_policy_is_explicit_and_bounded() -> None:
+    routing = (ROOT / "references" / "model-routing.md").read_text(encoding="utf-8")
+    adapter = (ROOT / "adapters" / "codex.md").read_text(encoding="utf-8")
+    for term in ("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "low", "depth one", "one follow-up"):
+        assert_true(term in routing, f"routing reference missing {term!r}")
+    assert_true("Luna/low" in adapter, "Codex adapter must expose the Luna default")
+    assert_true("cannot select a model" in adapter, "Codex adapter must document model fallback")
+
+
+def test_superpowers_methods_are_risk_gated() -> None:
+    text = (ROOT / "references" / "superpowers-integration.md").read_text(encoding="utf-8")
+    for term in ("optional", "one at a time", "No TDD ceremony", "reviewer only after", "Do not chain"):
+        assert_true(term in text, f"Superpowers policy missing {term!r}")
+
+
+def test_runtime_package_contains_model_routing_reference() -> None:
+    temp = Path(tempfile.mkdtemp(prefix="adh-test-model-routing-package-"))
+    try:
+        package_dir = temp / "pkg"
+        run(["python3", "scripts/package_skill.py", "--output", str(package_dir), "--force"])
+        assert_true(
+            (package_dir / "references" / "model-routing.md").is_file(),
+            "runtime package must include model-routing reference",
+        )
+    finally:
+        shutil.rmtree(temp)
+
+
+def test_token_budget_contract_is_present_and_safe() -> None:
+    required = {
+        "token_budget",
+        "tokens_used",
+        "tokens_remaining",
+        "usage_kind",
+        "accounting_note",
+        "exhaustion_action",
+    }
+    template_state = load_json(ROOT / "templates" / "run_state.json")
+    template_budget = template_state["task_shape"]["resource_budget"]
+    assert_true(required <= set(template_budget), f"template budget missing {required - set(template_budget)}")
+    assert_true(template_budget["usage_kind"] == "unknown", "template must not invent token measurements")
+    assert_true(
+        template_budget["exhaustion_action"] == "stop_and_record_decision",
+        "budget exhaustion must stop and record a decision",
+    )
+    temp = Path(tempfile.mkdtemp(prefix="adh-test-token-budget-"))
+    try:
+        run(
+            [
+                "python3",
+                "scripts/init_run.py",
+                "--mode",
+                "full",
+                "--project-root",
+                str(temp),
+                "--title",
+                "token budget behavior",
+                "--agents",
+                "worker",
+                "--force",
+            ]
+        )
+        state = load_json(temp / "workspace" / "token-budget-behavior" / "run_state.json")
+        for budget in (state["tasks"][0]["resource_budget"], state["stages"][0]["resource_budget"]):
+            assert_true(required <= set(budget), f"generated budget missing {required - set(budget)}")
+            assert_true(budget["usage_kind"] == "unknown", "generated state must expose unavailable accounting")
+            assert_true(
+                budget["exhaustion_action"] == "stop_and_record_decision",
+                "generated state must preserve the exhaustion breaker",
+            )
+    finally:
+        shutil.rmtree(temp)
+
+
+def test_status_blocks_exhausted_token_budget() -> None:
+    temp, artifact_dir = full_artifact("exhausted token budget")
+    try:
+        mark_full_passed(artifact_dir)
+        state = load_json(artifact_dir / "run_state.json")
+        state["tasks"][0]["resource_budget"].update(
+            {
+                "token_budget": 100,
+                "tokens_used": 120,
+                "tokens_remaining": 0,
+                "usage_kind": "actual",
+            }
+        )
+        write_json(artifact_dir / "run_state.json", state)
+
+        result = run(["python3", "scripts/status.py", str(artifact_dir / "run_state.json")])
+        output = result.stdout
+        assert_true("token budget exhausted" in output, output)
+        assert_true("Completion confidence: blocked" in output, output)
+        assert_true("Completion confidence: high" not in output, output)
+    finally:
+        shutil.rmtree(temp)
+
+
+def test_status_blocks_exhausted_stage_token_budget() -> None:
+    temp, artifact_dir = full_artifact("exhausted stage token budget")
+    try:
+        mark_full_passed(artifact_dir)
+        state = load_json(artifact_dir / "run_state.json")
+        state["stages"][0]["resource_budget"].update(
+            {
+                "token_budget": 100,
+                "tokens_used": 120,
+                "tokens_remaining": 0,
+                "usage_kind": "actual",
+            }
+        )
+        write_json(artifact_dir / "run_state.json", state)
+
+        result = run(["python3", "scripts/status.py", str(artifact_dir / "run_state.json")])
+        output = result.stdout
+        assert_true("token budget exhausted" in output, output)
+        assert_true("Completion confidence: blocked" in output, output)
+        assert_true("Completion confidence: high" not in output, output)
+    finally:
+        shutil.rmtree(temp)
+
+
+def test_token_budget_policy_documents_exhaustion_and_unknown_fallback() -> None:
+    text = "\n".join(
+        (
+            (ROOT / "references" / "model-routing.md").read_text(encoding="utf-8"),
+            (ROOT / "references" / "harness-protocol.md").read_text(encoding="utf-8"),
+            (ROOT / "scripts" / "status.py").read_text(encoding="utf-8"),
+            (ROOT / "scripts" / "validate_report.py").read_text(encoding="utf-8"),
+        )
+    )
+    for term in (
+        "tokens_used",
+        "tokens_remaining",
+        "usage_kind",
+        "unknown",
+        "stop_and_record_decision",
+        "accepted state is not allowed",
+    ):
+        assert_true(term in text, f"token budget contract missing {term!r}")
+
+
+def test_status_blocks_unknown_configured_task_and_stage_budget() -> None:
+    temp, artifact_dir = full_artifact("unknown configured budget")
+    try:
+        mark_full_passed(artifact_dir)
+        state = load_json(artifact_dir / "run_state.json")
+        for budget in (state["tasks"][0]["resource_budget"], state["stages"][0]["resource_budget"]):
+            budget["token_budget"] = 100
+            budget["usage_kind"] = "unknown"
+        write_json(artifact_dir / "run_state.json", state)
+
+        result = run(["python3", "scripts/status.py", str(artifact_dir / "run_state.json")])
+        output = result.stdout
+        assert_true(output.count("token budget accounting unavailable") == 2, output)
+        assert_true("Completion confidence: blocked" in output, output)
+    finally:
+        shutil.rmtree(temp)
+
+
+def test_validator_rejects_accepted_exhausted_budget() -> None:
+    temp, artifact_dir = full_artifact("accepted exhausted budget")
+    try:
+        mark_full_passed(artifact_dir)
+        state = load_json(artifact_dir / "run_state.json")
+        state["tasks"][0]["resource_budget"].update(
+            {
+                "token_budget": 100,
+                "tokens_used": 120,
+                "tokens_remaining": 0,
+                "usage_kind": "actual",
+            }
+        )
+        write_json(artifact_dir / "run_state.json", state)
+
+        result = run(
+            [
+                "python3",
+                "scripts/validate_report.py",
+                str(artifact_dir / "progress.md"),
+                "--type",
+                "progress",
+            ],
+            check=False,
+        )
+        assert_true(result.returncode != 0, "accepted run with exhausted budget must fail validation")
+        assert_true("resource budget exhausted" in result.stdout, result.stdout)
+    finally:
+        shutil.rmtree(temp)
+
+
+def test_validator_rejects_accepted_unknown_budget() -> None:
+    temp, artifact_dir = full_artifact("accepted unknown budget")
+    try:
+        mark_full_passed(artifact_dir)
+        state = load_json(artifact_dir / "run_state.json")
+        state["tasks"][0]["resource_budget"].update(
+            {
+                "token_budget": 100,
+                "usage_kind": "unknown",
+            }
+        )
+        write_json(artifact_dir / "run_state.json", state)
+
+        result = run(
+            [
+                "python3",
+                "scripts/validate_report.py",
+                str(artifact_dir / "progress.md"),
+                "--type",
+                "progress",
+            ],
+            check=False,
+        )
+        assert_true(result.returncode != 0, "accepted run with unknown budget must fail validation")
+        assert_true("resource budget accounting unavailable" in result.stdout, result.stdout)
+    finally:
+        shutil.rmtree(temp)
+
+
 def main() -> int:
     tests = [
         test_progress_template_is_lightweight,
@@ -340,6 +560,16 @@ def main() -> int:
         test_status_schema_malformed_registry_is_blocked,
         test_status_reports_accepted_run_with_pending_acceptance_conflict,
         test_negative_validators_and_package_check,
+        test_gpt56_routing_policy_is_explicit_and_bounded,
+        test_superpowers_methods_are_risk_gated,
+        test_runtime_package_contains_model_routing_reference,
+        test_token_budget_contract_is_present_and_safe,
+        test_status_blocks_exhausted_token_budget,
+        test_status_blocks_exhausted_stage_token_budget,
+        test_token_budget_policy_documents_exhaustion_and_unknown_fallback,
+        test_validator_rejects_accepted_exhausted_budget,
+        test_status_blocks_unknown_configured_task_and_stage_budget,
+        test_validator_rejects_accepted_unknown_budget,
     ]
     for test in tests:
         test()

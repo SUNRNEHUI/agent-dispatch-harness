@@ -19,6 +19,21 @@ In Codex, skill loading and actual dispatch are separate decisions. If the user 
 
 Do not default to subagents, worktrees, or full artifact initialization merely because Codex makes local file edits, shell checks, and parallel worker prompts easy to operate. Medium tasks should normally use Lite Orchestration: a short plan, bounded worker or stage reports when useful, and targeted acceptance evidence. Escalate to Full Harness only for resumable, high-risk, multi-stage, evaluator-sensitive, or rollback-heavy work.
 
+## GPT-5.6 Model And Reasoning Controls
+
+Load `references/model-routing.md` when choosing a spawned-agent model. The
+Codex mapping is Luna/low for simple read-heavy work, Terra for moderate work,
+and Sol for critical review; keep the manager on its active configuration and
+raise reasoning only when risk or evaluation justifies it. Current Codex
+runtimes may expose `model`, `model_reasoning_effort`, `agents.max_threads`, and
+`agents.max_depth`; use them as capabilities, not as a task fan-out target.
+
+Keep depth at one, start with a bounded wave, and do not retry indefinitely. If
+the runtime cannot select a model, inherit its configuration and record the
+fallback; do not imply that an override succeeded. Do not add GPT-5.6-only API
+fields, Pro mode, prompt-cache fields, or Programmatic Tool Calling to this
+adapter without an implementation-specific compatibility check.
+
 ## Capability Gate
 
 Record the actual session capabilities before dispatch:
@@ -65,6 +80,10 @@ When Codex has a real delegation mechanism, each worker should receive:
 - required evidence
 - stop conditions
 - four-line return contract
+
+Use a fresh task-local context when the runtime supports it. Prefer read-heavy
+parallel work; keep dependent writes sequential and do not pass raw logs or the
+full parent transcript to every worker.
 
 When it does not, the manager can still run the same protocol with sequential stages. The state machine should show the fallback so later readers know no parallel isolation occurred.
 

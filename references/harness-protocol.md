@@ -106,10 +106,24 @@ Worker reports and acceptance records should carry the same gate mode. A report 
 ### Budget Record
 
 - stage budget
+- worker count, nesting depth, and follow-up limit
 - observed usage
 - breaker condition
 - stop reason
 - continuation decision
+
+The default budget is one bounded worker wave. Add workers or follow-ups only
+when each has a distinct expected result. If the expected quality or latency
+benefit no longer exceeds coordination cost, stop and continue with the manager
+or record a decision. Token/cost improvements must be measured on representative
+tasks rather than inferred from a model label.
+
+When a token budget is supplied, `run_state.json` records `token_budget`,
+`tokens_used`, `tokens_remaining`, `usage_kind` (`actual`, `estimated`, or
+`unknown`), `accounting_note`, and `exhaustion_action`. A missing counter is an
+explicit unknown fallback, not a character-count estimate. Exhausted or
+unaccountable configured budgets block acceptance until a stop/decision is
+recorded; the manager may not claim success from a worker summary alone.
 
 ### Trace Record
 

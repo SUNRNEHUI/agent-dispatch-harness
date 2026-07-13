@@ -30,6 +30,18 @@ The manager owns scheduling, state, merge, and final acceptance. Sub-agents own 
 
 Full artifact mode only when justified. When Full Harness is active, the manager must produce durable state and verification evidence before claiming completion. Otherwise keep state lightweight and proportional to the work.
 
+## GPT-5.6-Aware Dispatch
+
+When the runtime supports explicit model and reasoning controls, load
+`references/model-routing.md` only when assigning sub-agent work. Keep the
+manager on its active parent configuration, use the adapter's role mapping, and
+record unavailable overrides instead of claiming a model was used.
+
+Treat sub-agent work as a budgeted optimization: one bounded wave, shallow
+nesting, task-local prompts, compact reports, and no follow-up loop without new
+evidence. Stop when coordination costs more than the independent result is
+worth. The model choice never changes manager-owned acceptance or safety gates.
+
 ## Mode Selection
 
 Run this decision before capability checks, DAG creation, artifact initialization, or worker assignment.
@@ -124,6 +136,13 @@ Dispatch is not justified when any of these dominate:
 - Candidate tasks share unresolved state or must be done sequentially.
 - The only reason to dispatch is that the user used the words "multi-agent" or "agents" without a task that benefits from delegation.
 
+Before dispatch, name the independent result that justifies each worker. Start
+with one wave of no more than two Lite workers or three Full workers, keep
+nesting at depth one, and allow at most one follow-up per worker. Use a smaller
+budget when a single local sequence can finish the task. Stop if workers are
+redundant, ownership becomes unclear, or synthesis costs exceed the expected
+benefit.
+
 ## Operating Modes
 
 - **Direct Mode:** For small or localized work, execute directly without dispatch or artifacts.
@@ -171,6 +190,9 @@ Before planning:
 - Read the project `AGENTS.md`, docs, existing plans, previous ledgers, and relevant files.
 - If the user asks to continue, locate the prior artifact directory and read the previous ledger/reports before editing.
 - Check for previous sub-agent runs, reports, worktrees, or temporary resources that should be reused, closed, or left untouched.
+- For read-only Direct/Lite exploration, a lightweight existence check is enough;
+  do not load historical artifacts unless the task is resumable or depends on
+  their state.
 - If the user explicitly asked for real sub-agents, confirm the available delegation mechanism before assigning work.
 - Inspect git status before using worktrees. Do not overwrite or revert unrelated user changes.
 
@@ -363,6 +385,8 @@ End with:
 ## Reference Loading
 
 - Read `references/closed-loop-pattern.md` when designing or revising the orchestration loop.
+- Read `references/model-routing.md` only when the active runtime exposes model
+  or reasoning-effort selection for sub-agents.
 - Read `references/harness-protocol.md` when deciding which control layers should be hard protocol versus lightweight guidance.
 - Read `references/state-memory-boundary.md` when deciding whether information belongs in `task_spec.md`, `progress.md`, `run_state.json`, `trace.jsonl`, or cross-task memory.
 - Read `references/superpowers-integration.md` when deciding how to borrow TDD, parallel-agent, review, worktree, or verification methods without letting another workflow replace this skill's mode router.
@@ -377,6 +401,11 @@ End with:
 - Use `templates/lite_plan.md`, `templates/lite_review.md`, `templates/task_spec.md`, `templates/progress_ledger.md`, `templates/subagent_task.md`, `templates/subagent_report.md`, and `templates/evaluator_report.md` when scripts are not suitable.
 - Use `templates/tdd_trace.jsonl` as the starting trace format for TDD runtime evidence when present.
 
+Load references by task shape, not as a bundle: TDD only for code behavior,
+worktree only for conflicting writes or rollback risk, browser checks only for
+user-facing UI, and the Superpowers reference only when a supporting method is
+actually selected.
+
 ---
 
-*Agent Dispatch Harness v5.9.0 | 2026-07-09*
+*Agent Dispatch Harness v5.10.0 | 2026-07-13*

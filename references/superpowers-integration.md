@@ -14,6 +14,26 @@ Use `agent-dispatch-harness` to choose Direct Mode, Lite Orchestration, or Full 
 
 Do not treat another planning, TDD, worktree, review, verification, or parallel-agent workflow as a competing top-level router.
 
+## Activation Policy
+
+Superpowers-style methods are optional, one at a time by default, and selected
+by task risk. Do not load or run a full Superpowers workflow merely because the
+plugin is installed or the user mentioned it. Record the selected method and
+reason when it adds material cost.
+
+| Trigger | Method | Default when not triggered |
+| --- | --- | --- |
+| Explicit TDD, tested bug, or code behavior with a meaningful test path | Test-first or strict TDD gate | No TDD ceremony for docs, analysis, config, or low-risk exploration |
+| Material security, cross-cutting, or user-visible implementation risk | Spec and/or quality review | One manager review for ordinary Lite work |
+| Conflicting parallel writes or rollback risk | Worktree isolation | Shared checkout for read-only work and disjoint low-risk edits |
+| Independent work with clean ownership | Parallel-agent discipline | Direct execution when delegation overhead dominates |
+| Any mode's completion claim | Fresh evidence check | Never replace evidence with a worker self-report |
+
+Do not chain TDD, two reviews, worktrees, and a Full artifact set unless the
+task independently meets each trigger. This is the token-saving boundary: keep
+the safety, ownership, approval, state, evidence, and stop invariants while
+removing ceremony that does not change the acceptance decision.
+
 ## Method Mapping
 
 | Method | Use In | Purpose |
@@ -44,6 +64,8 @@ Use lightweight borrowing:
 - use test-first evidence when the task changes code behavior and a meaningful test path exists
 - use strict TDD only when the user, project, or worker assignment requires it
 - avoid full implementer/reviewer loops unless risk justifies them
+- use one bounded worker wave and compact reports; add a reviewer only after an
+  implementation exists and the risk gate requires independent review
 
 ### Full Harness
 

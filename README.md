@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness, formerly Multi-Agent Dispatcher, is an agent skill for routing explicit multi-agent requests into the smallest execution mode that can complete the work reliably. It avoids unnecessary delegation for small tasks and provides a durable harness for long, risky, resumable, evidence-verified work.
 
-Current version: **v5.9.0** · 2026-07-09
+Current version: **v5.10.0** · 2026-07-13
 
 ---
 
@@ -27,6 +27,7 @@ Sub-agents are used only for bounded execution, investigation, review, or evalua
 ## Core Capabilities
 
 - **Mode selection:** choose Direct, Lite, or Full execution before creating workers or artifacts.
+- **GPT-5.6-aware routing:** prefer Luna/low for simple Codex sub-agents, escalate by role and context, and record fallback when model controls are unavailable.
 - **Selective delegation:** dispatch sub-agents only when the task has clean ownership boundaries.
 - **Durable state:** preserve task state for long or resumable work under a project workspace directory.
 - **Runtime TDD evidence:** distinguish strict TDD, test-first evidence, substitute verification, and non-applicable work with wrapper-generated trace and optional filesystem mtime checks.
@@ -205,6 +206,7 @@ The runtime package includes:
 - `adapters/`
 - `references/`
   - `references/state-memory-boundary.md`
+  - `references/model-routing.md`
 - `templates/`
 - `scripts/init_run.py`
 - `scripts/harness_test_run.py`
@@ -381,6 +383,13 @@ Mode selection always runs first. Supporting methods are applied only when they 
 ---
 
 ## Release History
+
+### v5.10.0
+
+- Added GPT-5.6-aware Codex routing: Luna/low for simple sub-agents, Terra for moderate work, and Sol for critical review when explicit runtime controls are available.
+- Added bounded worker budgets, shallow nesting, task-local context, compact reports, and model-override fallback rules.
+- Made Superpowers-style methods risk-triggered and optional instead of a default ceremony bundle.
+- Added model-routing guidance, regression cases, and runtime packaging coverage without adding GPT-5.6-specific API fields.
 
 ### v5.9.0
 

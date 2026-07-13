@@ -88,6 +88,15 @@ VALID_RUN_STATUSES = {
     "failed",
     "unplanned",
 }
+REQUIRED_RESOURCE_BUDGET_FIELDS = {
+    "token_budget",
+    "tokens_used",
+    "tokens_remaining",
+    "usage_kind",
+    "accounting_note",
+    "exhaustion_action",
+}
+VALID_RESOURCE_USAGE_KINDS = {"actual", "estimated", "unknown"}
 VALID_TASK_STATUSES = {
     "planned",
     "ready",
@@ -419,6 +428,42 @@ def validate_acceptance_registry(path: Path) -> list[str]:
     return errors
 
 
+def validate_resource_budget(value: object, prefix: str) -> list[str]:
+    if not isinstance(value, dict):
+        return [f"{prefix} must be an object"]
+
+    errors: list[str] = []
+    missing = REQUIRED_RESOURCE_BUDGET_FIELDS - set(value)
+    errors.extend(f"{prefix} missing {field}" for field in sorted(missing))
+    usage_kind = value.get("usage_kind")
+    if usage_kind not in VALID_RESOURCE_USAGE_KINDS:
+        errors.append(f"{prefix}.usage_kind must be one of actual, estimated, unknown")
+    if value.get("exhaustion_action") != "stop_and_record_decision":
+        errors.append(f"{prefix}.exhaustion_action must be stop_and_record_decision")
+    for field in ("token_budget", "tokens_used", "tokens_remaining"):
+        number = value.get(field)
+        if number is not None and (not isinstance(number, int) or number < 0):
+            errors.append(f"{prefix}.{field} must be a non-negative integer or null")
+    if not isinstance(value.get("accounting_note"), str) or not value.get("accounting_note"):
+        errors.append(f"{prefix}.accounting_note must be a non-empty string")
+    return errors
+
+
+def resource_budget_issue(value: object) -> str | None:
+    if not isinstance(value, dict) or not isinstance(value.get("token_budget"), int):
+        return None
+    if value.get("usage_kind") == "unknown":
+        return "resource budget accounting unavailable"
+    tokens_used = value.get("tokens_used")
+    tokens_remaining = value.get("tokens_remaining")
+    if (
+        isinstance(tokens_used, int)
+        and tokens_used >= value["token_budget"]
+    ) or (isinstance(tokens_remaining, int) and tokens_remaining <= 0):
+        return "resource budget exhausted"
+    return None
+
+
 def validate_run_state(path: Path) -> list[str]:
     errors: list[str] = []
     try:
@@ -477,6 +522,7 @@ def validate_run_state(path: Path) -> list[str]:
             "verification",
             "verification_gate",
             "retry_count",
+            "resource_budget",
             "evidence",
             "stop_reason",
         ):
@@ -495,13 +541,18 @@ def validate_run_state(path: Path) -> list[str]:
             errors.extend(validate_verification_gate(item["verification_gate"], f"{prefix}.verification_gate"))
         if "retry_count" in item and not isinstance(item["retry_count"], int):
             errors.append(f"{prefix}.retry_count must be an integer")
+        if "resource_budget" in item:
+            errors.extend(validate_resource_budget(item["resource_budget"], f"{prefix}.resource_budget"))
+            issue = resource_budget_issue(item["resource_budget"])
+            if issue and data.get("status") == "accepted":
+                errors.append(f"{path.name}: {prefix} {issue}; accepted state is not allowed")
 
     for index, item in enumerate(stages, start=1):
         prefix = f"{path.name}: stages[{index}]"
         if not isinstance(item, dict):
             errors.append(f"{prefix} must be an object")
             continue
-        for key in ("id", "name", "status", "tasks", "evidence", "stop_reason"):
+        for key in ("id", "name", "status", "tasks", "resource_budget", "evidence", "stop_reason"):
             if key not in item:
                 errors.append(f"{prefix} missing {key}")
         if "status" in item and item["status"] not in VALID_TASK_STATUSES:
@@ -514,6 +565,11 @@ def validate_run_state(path: Path) -> list[str]:
                     errors.append(f"{prefix}.tasks references unknown task {task_id!r}")
         if "evidence" in item and not isinstance(item["evidence"], list):
             errors.append(f"{prefix}.evidence must be a list")
+        if "resource_budget" in item:
+            errors.extend(validate_resource_budget(item["resource_budget"], f"{prefix}.resource_budget"))
+            issue = resource_budget_issue(item["resource_budget"])
+            if issue and data.get("status") == "accepted":
+                errors.append(f"{path.name}: {prefix} {issue}; accepted state is not allowed")
     return errors
 
 

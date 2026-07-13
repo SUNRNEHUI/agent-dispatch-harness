@@ -49,6 +49,31 @@ def task_blockers(tasks: list[object]) -> list[str]:
     return blockers
 
 
+def resource_budget_blockers(items: list[object], scope: str = "task") -> list[str]:
+    blockers: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        budget = item.get("resource_budget")
+        if not isinstance(budget, dict) or not isinstance(budget.get("token_budget"), int):
+            continue
+        task_id = item.get("id", "?")
+        name = item.get("name", "")
+        label = f"{scope} {task_id} {name}".strip()
+        usage_kind = budget.get("usage_kind")
+        if usage_kind == "unknown":
+            blockers.append(f"{label}: token budget accounting unavailable")
+            continue
+        tokens_used = budget.get("tokens_used")
+        tokens_remaining = budget.get("tokens_remaining")
+        if (
+            isinstance(tokens_used, int)
+            and tokens_used >= budget["token_budget"]
+        ) or (isinstance(tokens_remaining, int) and tokens_remaining <= 0):
+            blockers.append(f"{label}: token budget exhausted")
+    return blockers
+
+
 def task_completion(tasks: list[object]) -> tuple[int, int]:
     total = 0
     done = 0
@@ -221,7 +246,12 @@ def format_status(data: dict[str, object], state_path: Path | None = None) -> st
         else:
             lines.append(f"Acceptance: {registry_status}")
 
-    blockers = task_blockers(tasks)
+    stage_items = stages if isinstance(stages, list) else []
+    blockers = [
+        *task_blockers(tasks),
+        *resource_budget_blockers(tasks),
+        *resource_budget_blockers(stage_items, "stage"),
+    ]
     lines.append("Blockers: " + ("; ".join(blockers) if blockers else "none"))
 
     conflicts = accepted_state_conflicts(status, acceptance_counts, registry_error)

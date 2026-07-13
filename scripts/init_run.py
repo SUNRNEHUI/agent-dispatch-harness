@@ -97,6 +97,17 @@ def default_tdd_cycle_context() -> dict[str, object]:
     }
 
 
+def default_resource_budget() -> dict[str, object]:
+    return {
+        "token_budget": None,
+        "tokens_used": None,
+        "tokens_remaining": None,
+        "usage_kind": "unknown",
+        "accounting_note": "Token counters unavailable; do not infer tokens from characters.",
+        "exhaustion_action": "stop_and_record_decision",
+    }
+
+
 def default_state_layers(mode: str = "full") -> dict[str, object]:
     if mode == "lite":
         return {
@@ -202,6 +213,7 @@ def main() -> int:
             "verification_gate": default_verification_gate(),
             "retry_count": 0,
             "budget": "",
+            "resource_budget": default_resource_budget(),
             "evidence": [],
             "stop_reason": "",
         }
@@ -214,6 +226,7 @@ def main() -> int:
             "status": "planned" if task_items else "unplanned",
             "tasks": [item["id"] for item in task_items],
             "budget": "",
+            "resource_budget": default_resource_budget(),
             "evidence": [],
             "stop_reason": "",
         }
