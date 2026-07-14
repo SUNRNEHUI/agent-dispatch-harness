@@ -1,3 +1,0 @@
-{"event":"gate_decision","gate_mode":"test_first_evidence","reason":"template example"}
-{"event":"test_run","phase":"RED","result":"FAIL","summary":"expected failing test"}
-{"event":"test_run","phase":"GREEN","result":"PASS","summary":"implemented behavior"}

@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness（原名 Multi-Agent Dispatcher）是一套**跨模型任务执行 OS**。它帮助 Codex / Claude Code / Grok 等编码代理按风险选择最轻流程：从单次 Direct 修复，到带证据门槛的 Full harness 长任务，而不是“永远多智能体”或“永远写大 harness”。
 
-当前版本：**v6.0.0** · 2026-07-14
+当前版本：**v6.3.0** · 2026-07-14
 
 ---
 
@@ -36,6 +36,7 @@ Agent Dispatch Harness（原名 Multi-Agent Dispatcher）是一套**跨模型任
 - **密度判断：** 在能抑制假完成的前提下选最轻模式（Direct → synthesis → Lite → Full）。
 - **Spec Synthesis：** 把模糊或“更快/更好”类目标编译成可执行合同。
 - **选择性调度：** 仅在 ownership 干净且协调成本低于收益时派工。
+- **成本感知模型路由：** Codex 简单可验证任务默认 Luna medium，主执行循环 Luna xhigh，规划 Sol high，关键审查 Sol xhigh。
 - **Full harness 持久化：** `run_state`、验收清单、trace、任务合同位于 `workspace/<slug>/`。
 - **运行时 TDD 证据：** strict TDD / test-first / substitute / not_applicable，配合 wrapper 生成的 trace。
 - **证据化验收：** 测试、构建、日志、浏览器、截图、CI 或 evaluator；禁止仅靠自评。
@@ -62,6 +63,14 @@ Agent Dispatch Harness（原名 Multi-Agent Dispatcher）是一套**跨模型任
 - 单 owner 中等步骤 → Direct+，不要 Lite 演戏
 - 模糊目标默认不等于 Full harness
 - 改进型任务先定义终点指标与基线，再“优化”
+
+### Codex 成本感知路由
+
+先做密度判断：便宜模型本身不构成派工理由。本安装使用
+`fast = Luna medium`、`main = Luna xhigh`、`planner = Sol high`、
+`critical_reviewer = Sol xhigh`，并明确排除 Terra。使用
+`scripts/model_router.py` 做确定性选择；Full 模式通过 `dispatch-create`
+持久化路由。详见 `references/model-routing.md`。
 
 ---
 
@@ -190,6 +199,18 @@ python3 scripts/package_skill.py --check ~/.codex/skills/agent-dispatch-harness
 
 runtime 包只包含 skill 运行时需要的文件。
 
+Full run 在派工前应校验已填写 spec，并通过受控入口修改实时任务 / 验收状态：
+
+```bash
+python3 ~/.codex/skills/agent-dispatch-harness/scripts/validate_report.py workspace/<slug>/task_spec.md --type spec --require-filled
+python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py seal workspace/<slug> --reason "已复核 synthesis baseline"
+python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py dispatch-create workspace/<slug> --worker-id <runtime-id> --task-id 1.1 --contract-path tasks/1.1-worker.md --report-path 1.1-worker-report.md
+python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py validate workspace/<slug>
+python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py task-set workspace/<slug> --task-id 1.1 --status ready
+```
+
+运行时协调现在覆盖受控 run / task / acceptance / dispatch 迁移、typed evidence receipt、canonical digest 绑定和可恢复事务。人工填写的派工前状态需用 `seal` 显式绑定；受保护 PASS 使用 `--evidence-file`，controller 会把 artifact SHA-256 与 committed transaction 关联，自由文本 `--evidence` 只能作为上下文。`validate` 会拒绝 trace 损坏、未完成事务、状态或证据 digest 漂移、只有聊天记录却没有 durable dispatch 的 running worker、未收敛终态和无效 TDD 时序。这仍是 cooperative integrity，不是对能同时重写代码与 trace 的同用户攻击者提供密码学防护。
+
 ---
 
 ## 从旧名称迁移
@@ -212,9 +233,9 @@ runtime 包包含：
 
 - `VERSION`、`SKILL.md`、`master-prompt.md`、`sub-prompt.md`、`agents/openai.yaml`
 - `adapters/` — `codex.md`、`claude-code.md`、`universal.md`
-- `references/` — 协议、lane、Spec Synthesis、proportionality、TDD gates、示例
+- `references/` — 协议、lane、Spec Synthesis、proportionality、模型路由、TDD gates、示例
 - `templates/` — Full / Lite harness 模板
-- `scripts/` — `init_run.py`、`harness_test_run.py`、`runtime_state.py`、`validate_workspace.py`、
+- `scripts/` — `init_run.py`、`harness_schema.py`、`harnessctl.py`、`harness_test_run.py`、`model_router.py`、`runtime_state.py`、`validate_workspace.py`、
   `status.py`、`tdd_gate_check.py`、`validate_report.py`、`score_harness.py`、`score_skill_protocol.py`
 
 权威文件清单以 `scripts/package_skill.py:RUNTIME_FILES` 为准。
@@ -400,6 +421,31 @@ python3 scripts/test_runtime_behavior.py
 
 ## 版本历史
 
+### v6.3.0
+
+- 新增可执行的 Codex 成本路由：Luna medium（`fast`）、Luna xhigh（`main`）、Sol high（`planner`）、Sol xhigh（`critical_reviewer`）；策略明确排除 Terra。
+- 高风险、worker 冲突和连续验证失败会确定性升级模型。
+- Full dispatch 持久化 runtime、profile、请求/实际模型、推理强度、路由原因和升级次数。
+- 新增路由行为回归、评估 case、runtime capability 字段和打包后的路由指南/工具。
+
+### v6.2.0
+
+- 新增 controller 生成的 typed artifact evidence，包含 SHA-256 与 committed transaction receipt；worker/free-form 自报不能再单独完成受保护 PASS。
+- 新 Full run 从初始化开始绑定 canonical digest，并为复核过的人工填写状态增加显式派工前 `seal`。
+- 新增 `dispatch-create` / `dispatch-update` 持久 worker 生命周期；派工后只有聊天记录、没有 durable dispatch 的 running task 会校验失败。
+- strict spec gate 拒绝标题回声和泛化完成词；`score_harness` 继续只作建议，不冒充产品验收。
+- 增加证据、状态绑定、语义 spec 与 dispatch 持久化的 RED/GREEN 回归及 live dogfood。
+
+### v6.1.0
+
+- 在 `harness_schema.py` 中统一 runtime schema version、状态枚举与迁移规则。
+- 新增 `harnessctl.py`，提供受控 run / 任务 / 验收迁移、证据门槛、artifact 锁和事务日志。
+- 对损坏 JSONL、空验收清单、未完成事务、终态跨文件冲突和活动 TDD 时序提供确定性的完整性诊断。
+- 新增带 digest 的事务恢复，以及带 stage rollup 的受控顶层 run 迁移。
+- 强化 Markdown 校验，支持中文编号标题，并拒绝 fenced 示例、重复别名、空区块和占位符。
+- 清空 runtime TDD trace 模板中的示例 RED/GREEN，避免模板被当成伪证据。
+- 新增 runtime 完整性和本地化行为回归测试。
+
 ### v6.0.0
 
 - 重新定位为**通用任务 OS**：按密度选 Direct / Lite / Full，而非多智能体优先。
@@ -507,10 +553,6 @@ python3 scripts/test_runtime_behavior.py
 
 - 引入闭环多智能体协议。
 - 新增 artifact 初始化、报告校验、角色边界、停止条件和 evaluator 模板。
-
----
-
-运行时协调使用 cooperative manager-only state/trace API guard、JSON 原子替换、JSONL 加锁追加，并从独立 git 环境读取 workspace identity。该 guard 可被同一用户进程直接写文件绕过；隔离依赖 native sandbox/OS permissions。验证默认 1800 秒，且 timeout 必须不超过 runtime budget。
 
 ## 许可证
 

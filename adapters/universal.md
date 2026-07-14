@@ -13,6 +13,14 @@ The agent can:
 
 If a capability is missing: **narrow scope, sequential stages, or ask** — never invent parallel results.
 
+Runtime detection should prefer an explicit launcher/adaptor identity, then verified active
+capabilities. The presence of an installed `codex`, `claude`, or `grok` executable does not
+prove that runtime owns the current session.
+
+Portable route names are `fast`, `main`, `planner`, and `critical_reviewer`. Their concrete
+models belong to the runtime adapter. If per-worker model selection is unavailable, record
+the requested profile and the fallback; do not claim the requested model was used.
+
 ## Mapping common tools
 
 | Need | Codex-ish | Claude-ish | Grok-ish / generic |

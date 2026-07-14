@@ -1,12 +1,10 @@
 ---
 name: agent-dispatch-harness
 description: >
-  Universal task-execution methodology for any model (Codex, Claude, Grok, etc.).
-  Use for multi-agent / sub-agents / DAG / worktree / 多智能体, OR vague goals needing
-  Spec Synthesis, OR long resumable evidence-verified work, OR when the agent must
-  decide how much process (Direct vs Lite vs Full harness) to apply without wasting
-  tokens. Former name: Multi-Agent Dispatcher. Prefer this skill as the routing OS
-  for planning density, fake-success control, and acceptance-before-done.
+  Use when a task explicitly requests multi-agent, sub-agent, DAG, worktree, or parallel
+  delegation; when a vague or improvement-shaped goal is easy to fake-complete; or when
+  long, resumable, high-risk work needs durable evidence and acceptance across sessions.
+  Former name: Multi-Agent Dispatcher.
 ---
 
 # Agent Dispatch Harness
@@ -50,6 +48,22 @@ Answer in order. **Stop at the first match.**
 - If coordination cost > implementation cost → do not dispatch.
 
 **Do NOT create** `run_state.json` / full artifact dirs for small or medium tasks unless Full triggers fire.
+
+### Cost-aware model routing (after density)
+
+Model choice never justifies dispatch. Finish a tiny task in the current thread; use a
+cheaper worker only when repeated/parallel work outweighs coordination cost.
+
+| Profile | Model / effort | Route |
+|---|---|---|
+| `fast` | Luna `medium` | simple + mechanically verifiable |
+| `main` | Luna `xhigh` | default high-frequency manager/executor |
+| `planner` | Sol `high` | fuzzy goals, planning, harness synthesis |
+| `critical_reviewer` | Sol `xhigh` | high risk, conflict, two validation failures |
+
+Terra is not used by this Codex policy. Run `scripts/model_router.py` when uncertain. Persist
+the runtime/profile/model/reason in every real Full dispatch. Deep rules and CLI:
+`references/model-routing.md`.
 
 ## 2. Spec Synthesis (fuzzy → executable)
 
@@ -106,6 +120,12 @@ Intake → Density/Mode → Synthesis? → Capability → Artifacts → DAG
 - Manager owns state, merge, final acceptance.
 - Workers own bounded slices only.
 - `init_run --with-synthesis`: impl tasks stay `planned` until synthesis checklist done.
+- Before dispatch, validate filled specs with `validate_report.py ... --type spec --require-filled`.
+- After human-authored Full JSON/spec edits and before execution, run `harnessctl.py seal <artifact-dir> --reason <why>` to bind the reviewed baseline.
+- Record every real worker with `dispatch-create` immediately after spawn and advance it with `dispatch-update`; chat-only worker IDs are not resumable state.
+- Mutate run, task, and acceptance statuses through `harnessctl.py`; direct JSON edits are not accepted evidence.
+- Protected PASS uses controller-generated typed receipts such as `--evidence-file`; free-form `--evidence` is supporting context only and cannot complete a new Full run.
+- Run `harnessctl.py validate <artifact-dir>` before resume, evaluation, and final acceptance.
 
 Capability / worktree / TDD details: load only when needed (`references/tdd-gates.md`, adapters).
 
@@ -130,7 +150,7 @@ Optional: `python3 <skill-dir>/scripts/validate_report.py <report> --type subage
 
 ## 5. Verification & stop (precision)
 
-**Accept only with external evidence:** tests, typecheck, build, logs, browser, API readback.  
+**Accept only with external evidence:** tests, typecheck, build, logs, browser, API readback. In Full mode, retain the checked output/report inside the artifact and pass it through `--evidence-file` so the controller records its digest and transaction receipt.
 Reject stubs/TODOs/mocks as “done”. UI paths need browser/screenshot when available.
 
 **Manager re-verify (required):** before PASS, the manager (or evaluator) must **re-run or re-check** the critical command/diff themselves. Copying a worker’s “已完成” or a self-written `VERIFY_OK` string is **not** evidence. For docs, check concrete content (not only heading presence).
@@ -173,6 +193,7 @@ python3 <skill-dir>/scripts/score_harness.py --fixture <artifact-dir> --pretty
 | Protocol depth | `references/harness-protocol.md` |
 | Codex / Claude specifics | `adapters/codex.md` / `adapters/claude-code.md` |
 | Universal runtime notes | `adapters/universal.md` |
+| Cost/model routing | `references/model-routing.md` + runtime adapter |
 | Eval / regression of this skill | `references/eval_cases.md` |
 
 **Default:** this file + maybe one reference. That is enough for most runs.
@@ -186,4 +207,4 @@ If Full: point to artifact paths, not paste everything.
 
 ---
 
-*Agent Dispatch Harness v6.0.0 | 2026-07-14*
+*Agent Dispatch Harness v6.3.0 | 2026-07-14*

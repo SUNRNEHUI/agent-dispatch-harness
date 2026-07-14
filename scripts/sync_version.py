@@ -27,6 +27,18 @@ VERSION_PATTERNS = {
             "*Agent Dispatch Harness v{version} | {date}*",
         ),
     ),
+    "master-prompt.md": (
+        (
+            re.compile(r"^\*Master Prompt v[^|]+ \| [^*]+\*$", re.MULTILINE),
+            "*Master Prompt v{version} | {date}*",
+        ),
+    ),
+    "sub-prompt.md": (
+        (
+            re.compile(r"^\*Sub-Agent Prompt v[^|]+ \| [^*]+\*$", re.MULTILINE),
+            "*Sub-Agent Prompt v{version} | {date}*",
+        ),
+    ),
 }
 
 

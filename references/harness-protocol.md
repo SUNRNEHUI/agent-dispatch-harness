@@ -1,6 +1,6 @@
 # Harness Protocol Reference
 
-This reference defines the v5 core protocol. It is intentionally separate from any one agent runtime. Runtime adapters may become thinner as models improve, but the manager still needs a durable protocol for state, evidence, budget, and final acceptance.
+This reference defines the v6.3 core protocol. It is intentionally separate from any one agent runtime. Runtime adapters may become thinner as models improve, but the manager still needs a durable protocol for state, evidence, budget, and final acceptance.
 
 ## Protocol Goal
 
@@ -60,6 +60,10 @@ Required records are mandatory only for Full Harness runs. Direct mode creates n
 
 A Full Harness run should preserve these records in durable files when the task is complex or resumable.
 
+The runtime schema version is defined once in `scripts/harness_schema.py`. Templates,
+initialization, validation, and guarded transitions must use that source. A mismatched or
+missing version is an integrity failure, not a hint to guess a migration.
+
 ### Capability Record
 
 - runtime name
@@ -82,6 +86,19 @@ A Full Harness run should preserve these records in durable files when the task 
 - timestamp or ordering marker
 - evidence path
 - next action
+
+### Model Route Record
+
+- runtime identity established by the active adapter, not executable discovery alone
+- profile: `fast`, `main`, `planner`, or `critical_reviewer`
+- requested model and reasoning effort
+- resolved model when the runtime exposes it
+- observable route reason
+- escalation count
+
+Density selection happens first. A cheap model is not a reason to dispatch, and a requested
+model is not evidence that the runtime resolved it. Runtime-specific mappings live in
+`references/model-routing.md` and the matching adapter.
 
 ### Acceptance Record
 
@@ -122,6 +139,51 @@ Worker reports and acceptance records should carry the same gate mode. A report 
 - evaluator result
 - commands or checks that matter for acceptance
 - final registry status
+
+Trace files are JSONL: every non-empty line must be one JSON object. Examples do not belong
+in runtime trace templates. A started state transaction without a matching committed event
+is an incomplete transition and blocks resume or acceptance.
+
+## Controlled Runtime Operations
+
+After `init_run.py --mode full`, use the narrow control surface instead of hand-editing live
+run, task, or acceptance statuses:
+
+```bash
+python3 <skill-dir>/scripts/harnessctl.py validate <artifact-dir>
+python3 <skill-dir>/scripts/harnessctl.py seal <artifact-dir> --reason "reviewed synthesis baseline"
+python3 <skill-dir>/scripts/harnessctl.py dispatch-create <artifact-dir> --worker-id <runtime-worker-id> --task-id 1.1 --contract-path tasks/1.1-worker.md --report-path 1.1-worker-report.md --runtime codex --profile main --requested-model gpt-5.6-luna --reasoning-effort xhigh --route-reason "default high-frequency manager"
+python3 <skill-dir>/scripts/harnessctl.py dispatch-update <artifact-dir> --dispatch-id <id> --status reported
+python3 <skill-dir>/scripts/harnessctl.py task-set <artifact-dir> --task-id 1.1 --status ready
+python3 <skill-dir>/scripts/harnessctl.py task-set <artifact-dir> --task-id 1.1 --status running
+python3 <skill-dir>/scripts/harnessctl.py task-set <artifact-dir> --task-id 1.1 --status passed --evidence-file <artifact-relative-report-or-log> --no-test-reason <reason-if-not-applicable>
+python3 <skill-dir>/scripts/harnessctl.py acceptance-set <artifact-dir> --criterion-id AC-001 --status pass --evidence-file <artifact-relative-report-or-log> --pass-algorithm <rule> --no-test-reason <reason-if-not-applicable>
+# Advance the legal run sequence; do not jump directly from intake to accepted.
+python3 <skill-dir>/scripts/harnessctl.py run-set <artifact-dir> --status gated
+python3 <skill-dir>/scripts/harnessctl.py run-set <artifact-dir> --status specified
+# ... dispatched -> reported -> evaluating ...
+python3 <skill-dir>/scripts/harnessctl.py run-set <artifact-dir> --status accepted --evidence-file <final-verification-report>
+python3 <skill-dir>/scripts/harnessctl.py recover <artifact-dir>
+```
+
+The controller validates the current and candidate documents, rejects illegal transitions
+or unverified PASS states, writes state atomically under an artifact lock, and journals
+started/committed transaction events. `validate` also rejects malformed JSONL, empty
+acceptance registries, schema drift, incomplete transactions, unresolved terminal tasks/stages,
+chat-only dispatches, canonical-state digest drift, evidence receipt/digest mismatch, and invalid active TDD traces. Journal records carry before/after digests; `recover` appends a
+committed or aborted terminal event only when the canonical state matches one of those digests.
+
+`seal` is the explicit pre-dispatch boundary for reviewed human-authored state. It is allowed only before execution and does not make prose correct; it records that the manager intentionally accepts the current structured baseline. New Full runs treat free-form `--evidence` as non-qualifying legacy context. `--evidence-file` hashes a non-empty artifact file and binds that receipt to the committed transition; a worker report still needs manager review and the relevant testing/evaluator gate.
+
+Before dispatch, validate human-authored Full specs semantically:
+
+```bash
+python3 <skill-dir>/scripts/validate_report.py <artifact-dir>/task_spec.md --type spec --require-filled
+```
+
+The validator accepts explicit localized aliases and structural numbering, but rejects empty,
+placeholder-only, heading-echo, generic completion-word, duplicate, or fenced-example sections. Template shape alone is never
+acceptance evidence.
 
 ## State Machine
 

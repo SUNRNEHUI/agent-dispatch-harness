@@ -19,6 +19,25 @@ In Codex, skill loading and actual dispatch are separate decisions. If the user 
 
 Do not default to subagents, worktrees, or full artifact initialization merely because Codex makes local file edits, shell checks, and parallel worker prompts easy to operate. Medium tasks should normally use Lite Orchestration: a short plan, bounded worker or stage reports when useful, and targeted acceptance evidence. Escalate to Full Harness only for resumable, high-risk, multi-stage, evaluator-sensitive, or rollback-heavy work.
 
+## Cost-Aware Model Profiles
+
+Run density selection before model selection. Do not spawn a cheaper subagent for a tiny
+task that the active main thread can finish with less coordination.
+
+This installation uses an explicit GPT-5.6 policy:
+
+| Profile | Codex model | Effort | Use |
+|---|---|---|---|
+| `fast` | `gpt-5.6-luna` | `medium` | simple and mechanically verifiable |
+| `main` | `gpt-5.6-luna` | `xhigh` | normal high-frequency manager/executor |
+| `planner` | `gpt-5.6-sol` | `high` | fuzzy planning, architecture, harness synthesis |
+| `critical_reviewer` | `gpt-5.6-sol` | `xhigh` | high risk, conflict, repeated validation failure |
+
+Terra is deliberately excluded. Use `scripts/model_router.py` for deterministic selection.
+Escalation has priority over cost: high risk, worker conflict, or two validation failures
+routes to `critical_reviewer`. When the runtime exposes the actual resolved model, record
+it separately from the requested model.
+
 ## Capability Gate
 
 Record the actual session capabilities before dispatch:
@@ -29,6 +48,7 @@ Record the actual session capabilities before dispatch:
 - browser or app automation tools
 - image, document, spreadsheet, or other specialized tools if relevant
 - whether real sub-agent delegation exists in the active environment
+- whether per-agent model selection exists and which model was actually resolved
 - whether supporting skills or methods are available for TDD, worktrees, systematic debugging, code review, verification, or parallel-agent discipline
 - whether worktrees are safe given current git status
 

@@ -95,9 +95,16 @@ def append_jsonl(path: str | Path, event: dict[str, Any], *, writer_role: str | 
     _require_scope(writer_role, scope)
     target = Path(path).expanduser()
     target.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n"
+    payload = (json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
     with locked(target):
-        with target.open("a", encoding="utf-8") as handle:
+        with target.open("a+b") as handle:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() > 0:
+                handle.seek(-1, os.SEEK_END)
+                if handle.read(1) != b"\n":
+                    handle.seek(0, os.SEEK_END)
+                    handle.write(b"\n")
+            handle.seek(0, os.SEEK_END)
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())

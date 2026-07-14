@@ -1,5 +1,6 @@
 {
-  "version": 2,
+  "version": 1,
+  "evidence_policy": "typed-v1",
   "created_at": "",
   "updated_at": "",
   "title": "",
