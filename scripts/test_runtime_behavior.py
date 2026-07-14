@@ -638,6 +638,23 @@ def test_schema_version_has_one_runtime_source() -> None:
         shutil.rmtree(temp)
 
 
+def test_public_identity_is_consistent() -> None:
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme_zh = (ROOT / "README.zh-CN.md").read_text(encoding="utf-8")
+    openai_manifest = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8")
+    package_script = (ROOT / "scripts" / "package_skill.py").read_text(encoding="utf-8")
+
+    frontmatter = skill.split("---", 2)[1]
+    assert_true("name: agent-reliability-harness" in frontmatter, frontmatter)
+    assert_true("# Agent Reliability Harness" in skill, "SKILL.md title is stale")
+    for document in (readme, readme_zh):
+        assert_true("# Agent Reliability Harness" in document, "README title is stale")
+        assert_true("agent-reliability-harness" in document, "README install/repository slug is stale")
+    assert_true("Agent Reliability Harness" in openai_manifest, openai_manifest)
+    assert_true("agent-reliability-harness" in package_script, package_script)
+
+
 def test_codex_model_router_uses_luna_main_and_sol_planning() -> None:
     cases = (
         (["--simple", "--mechanically-verifiable"], "fast", "gpt-5.6-luna", "medium"),
@@ -1760,6 +1777,7 @@ def main() -> int:
         test_status_reports_accepted_run_with_pending_acceptance_conflict,
         test_negative_validators_and_package_check,
         test_schema_version_has_one_runtime_source,
+        test_public_identity_is_consistent,
         test_codex_model_router_uses_luna_main_and_sol_planning,
         test_harnessctl_persists_model_route_on_dispatch,
         test_harnessctl_rejects_codex_route_bypasses,

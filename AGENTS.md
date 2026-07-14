@@ -1,6 +1,6 @@
 # AGENTS.md
 
-本文件是 `agent-dispatch-harness` 项目的项目级规则。它覆盖用户级通用规则中与本项目冲突的部分。
+本文件是 `agent-reliability-harness` 项目的项目级规则。它覆盖用户级通用规则中与本项目冲突的部分。
 
 ## 项目定位
 
@@ -34,7 +34,7 @@
 - 修改当前版本时，先改 `VERSION`，再运行 `python3 scripts/sync_version.py --fix`。
 - 修改 runtime 内容时，必须同步 `scripts/package_skill.py` 的包含/排除逻辑。
 - 不要把 `workspace/`、缓存、session 日志、私有配置或生成 artifact 加入 runtime 包。
-- 不要把本地安装目录 `~/.codex/skills/agent-dispatch-harness` 当成源码。源码以本仓库为准。
+- 不要把本地安装目录 `~/.codex/skills/agent-reliability-harness` 当成源码。源码以本仓库为准。
 - 保持 diff 小而聚焦，不做无关重排、格式化或重命名。
 
 ## TDD 和验证
@@ -62,7 +62,7 @@ python3 scripts/validate_report.py /tmp/adh-smoke-lite/workspace/lite-smoke/lite
 python3 scripts/status.py /tmp/adh-smoke-full/workspace/full-smoke/run_state.json
 python3 scripts/test_runtime_behavior.py
 python3 scripts/package_skill.py --verify-source
-python3 scripts/package_skill.py --output /tmp/agent-dispatch-harness-runtime --force
+python3 scripts/package_skill.py --output /tmp/agent-reliability-harness-runtime --force
 ```
 
 如果改动影响 TDD trace：
@@ -74,8 +74,8 @@ python3 scripts/tdd_gate_check.py templates/tdd_trace.jsonl
 如果同步本地安装：
 
 ```bash
-rsync -a --delete /tmp/agent-dispatch-harness-runtime/ /Users/sunrenhui/.codex/skills/agent-dispatch-harness/
-python3 scripts/package_skill.py --check /Users/sunrenhui/.codex/skills/agent-dispatch-harness
+rsync -a --delete /tmp/agent-reliability-harness-runtime/ /Users/sunrenhui/.codex/skills/agent-reliability-harness/
+python3 scripts/package_skill.py --check /Users/sunrenhui/.codex/skills/agent-reliability-harness
 ```
 
 ## 发布规则
@@ -110,7 +110,7 @@ GitHub 发布通常包含：
 
 如果从新线程继续，请先读取桌面的项目 handoff：
 
-`/Users/sunrenhui/Desktop/agent-dispatch-harness-project-handoff.md`
+`/Users/sunrenhui/Desktop/agent-reliability-harness-project-handoff.md`
 
 再读取完整自动导出的线程 handoff：
 

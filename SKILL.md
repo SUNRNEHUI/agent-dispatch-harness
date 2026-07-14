@@ -1,13 +1,13 @@
 ---
-name: agent-dispatch-harness
+name: agent-reliability-harness
 description: >
   Use when a task explicitly requests multi-agent, sub-agent, DAG, worktree, or parallel
   delegation; when a vague or improvement-shaped goal is easy to fake-complete; or when
   long, resumable, high-risk work needs durable evidence and acceptance across sessions.
-  Former name: Multi-Agent Dispatcher.
+  Former names: Agent Dispatch Harness; Multi-Agent Dispatcher.
 ---
 
-# Agent Dispatch Harness
+# Agent Reliability Harness
 
 **What this is:** a runtime-agnostic **task OS** — precise execution with intelligent
 proportional process. Not “always multi-agent”, not “always write a big harness”.
@@ -207,4 +207,4 @@ If Full: point to artifact paths, not paste everything.
 
 ---
 
-*Agent Dispatch Harness v6.3.0 | 2026-07-14*
+*Agent Reliability Harness v7.0.0 | 2026-07-14*

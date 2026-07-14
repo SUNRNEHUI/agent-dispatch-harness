@@ -1,8 +1,8 @@
 interface:
-  display_name: "Agent Dispatch Harness"
+  display_name: "Agent Reliability Harness"
   short_description: "跨模型任务 OS：按风险选 Direct/Lite/Full，含糊目标先编译，证据验收，省 token"
   default_prompt: >
-    Use $agent-dispatch-harness as a universal task OS (Codex/Claude/Grok-agnostic).
+    Use $agent-reliability-harness as a universal task OS (Codex/Claude/Grok-agnostic).
     First decide density: Direct for tiny clear work (no harness files); compact Spec Synthesis
     for fuzzy or fake-success-prone goals; Lite for bounded parallel ownership; Full only for
     long/resumable/high-risk work. After density, choose a cost-aware runtime profile and record
