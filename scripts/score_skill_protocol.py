@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score whether agent-dispatch-harness skill docs encode Spec Synthesis protocol."""
+"""Score whether agent-reliability-harness skill docs encode Spec Synthesis protocol."""
 
 from __future__ import annotations
 

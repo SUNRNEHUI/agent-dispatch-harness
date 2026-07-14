@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a clean runtime-only copy of the agent-dispatch-harness skill."""
+"""Create a clean runtime-only copy of the agent-reliability-harness skill."""
 
 from __future__ import annotations
 
@@ -160,7 +160,7 @@ def check_install(source: Path, install_dir: Path) -> int:
     if not install_dir.is_dir():
         raise SystemExit(f"install directory does not exist: {install_dir}")
 
-    temp_output = Path("/tmp/agent-dispatch-harness-package-check")
+    temp_output = Path("/tmp/agent-reliability-harness-package-check")
     prepare_output(temp_output, force=True)
     copy_runtime_files(source, temp_output)
     differences = compare_dirs(temp_output, install_dir)

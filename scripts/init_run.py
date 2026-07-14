@@ -485,7 +485,7 @@ def main() -> int:
             "## 4) Acceptance rules or Phase 0 measurement plan\n\n"
             "## 5) Phase map + first ready task\n\n"
             "## 6) Open decisions (with recommended defaults)\n\n"
-            "See references/spec-synthesis.md in agent-dispatch-harness.\n"
+            "See references/spec-synthesis.md in agent-reliability-harness.\n"
         )
         alignment_path = artifact_dir / "ALIGNMENT.md"
         if write_text(alignment_path, alignment, args.force):

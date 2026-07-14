@@ -1,576 +1,208 @@
-# Agent Dispatch Harness
+# Agent Reliability Harness
 
 [简体中文](README.zh-CN.md) | English
 
-Agent Dispatch Harness (formerly Multi-Agent Dispatcher) is a **runtime-agnostic task OS** for coding agents. It helps any model (Codex, Claude Code, Grok, and similar) choose the lightest process that still makes false completion hard: from one-shot Direct fixes to durable Full harness runs with evidence gates.
+> A policy-driven execution harness for reliable, cost-aware AI coding agents.
 
-Current version: **v6.3.0** · 2026-07-14
+Agent Reliability Harness helps an agent choose the smallest process that can complete a task safely. It routes work across Direct, Lite, and Full modes; dispatches only when delegation pays for itself; and accepts completion only when evidence supports it.
 
----
+Current version: **v7.0.0** · 2026-07-14
 
-## Overview
+## Why this exists
 
-This skill is not “always multi-agent” and not “always write a big harness”. It is a proportional execution methodology:
+Most agent failures are not caused by a lack of raw model capability. They come from the surrounding execution system:
 
-```text
-User intent → density decision → (optional) Spec Synthesis → execute → evidence → done
+- a tiny task is turned into expensive coordination ceremony;
+- a fuzzy goal is implemented before success is made executable;
+- a worker says “done” without verifiable evidence;
+- a long run loses state after a timeout, conflict, or context reset;
+- a requested model is recorded as if it were the model that actually ran.
+
+This project treats that surrounding system as a first-class engineering surface: a reliability harness around the model.
+
+## What it guarantees
+
+| Guarantee | Mechanism |
+| --- | --- |
+| Proportional process | Direct, Lite, and Full mode selection happens before delegation. |
+| Bounded delegation | Every worker has an owner, scope, output contract, and stop condition. |
+| Honest completion | Acceptance requires external evidence; self-report is not proof. |
+| Resumable execution | Full runs persist state, trace, reports, budgets, and acceptance records. |
+| Model accountability | Requested, resolved, runtime, profile, and escalation data are recorded separately. |
+| Safe fallback | Missing capabilities, conflicts, and repeated failures produce an explicit fallback or stop state. |
+
+## How it works
+
+```mermaid
+flowchart LR
+    I["User intent"] --> D{"Density decision"}
+    D -->|"tiny / clear"| X["Direct"]
+    D -->|"bounded / separable"| L["Lite"]
+    D -->|"long / risky / resumable"| F["Full Harness"]
+    F --> C["Capability gate"]
+    C --> S["Spec + acceptance"]
+    S --> W["Bounded dispatch"]
+    W --> V["Evidence + validation"]
+    X --> V
+    L --> V
+    V --> A{"Accept or stop"}
 ```
 
-Multi-agent wording authorizes evaluation of dispatch. It does not force workers. Fuzzy goals should be compiled into success / fake-success / accept rules before implementation. Long, risky, or resumable work can use durable Full harness artifacts.
+The manager remains responsible for intent compilation, ownership, merge decisions, and final acceptance. A request to use multiple agents authorizes the manager to evaluate delegation; it does not require a worker for every task.
 
-The manager remains responsible for:
+## Execution modes
 
-- density / mode selection (Direct, Lite, Full)
-- Spec Synthesis when success is underspecified
-- scope, non-goals, ownership, and verification requirements
-- assigning bounded work to sub-agents only when ownership is clean
-- merging results and resolving conflicts
-- re-checking critical evidence before claiming completion
+| Mode | Use it when | What is created |
+| --- | --- | --- |
+| **Direct** | The task is small, local, sequential, or cheaper for one agent. | No harness files; implement and verify in the current thread. |
+| **Lite** | The work has a few clean slices but does not need durable recovery. | A compact plan, bounded ownership, short reports, and targeted checks. |
+| **Full** | The work is long, risky, resumable, parallel, evaluator-sensitive, or benefits from isolation. | Durable state, task specs, acceptance registry, trace, reports, budgets, and verification gates. |
 
-Sub-agents execute bounded slices only. They never own final acceptance.
+The decision rule is simple: coordination must reduce more risk than it adds in context, latency, and integration cost.
 
----
+## Cost-aware model routing
 
-## Core Capabilities
+Model choice happens **after** density selection. A cheaper worker never justifies dispatch for a one-line task.
 
-- **Density decision:** stop at the lightest mode that controls false completion (Direct → synthesis → Lite → Full).
-- **Spec Synthesis:** compile fuzzy or improvement-shaped goals into executable contracts before coding.
-- **Selective delegation:** spawn workers only with clean ownership and real coordination benefit.
-- **Cost-aware model routing:** Codex defaults to Luna medium for simple verified work, Luna xhigh for the main execution loop, Sol high for planning, and Sol xhigh for critical review.
-- **Durable Full harness:** `run_state`, acceptance registry, traces, and task contracts under `workspace/<slug>/`.
-- **Runtime TDD evidence:** strict TDD, test-first evidence, substitute verification, and non-applicable gates with wrapper-generated traces.
-- **Evidence-based acceptance:** tests, builds, logs, browser checks, screenshots, CI, or evaluator reports — never self-report alone.
-- **Plan quality scoring (optional):** `scripts/score_harness.py` rates harness completeness; it is never product acceptance.
-- **Runtime adapters:** Codex, Claude Code, and a universal adapter for other agents.
-- **Clean packaging:** runtime-only install package without docs, caches, or private configuration.
+### Codex policy
 
----
-
-## Execution Modes
-
-| Mode | Use When | Write on disk? | Behavior |
+| Profile | Model | Reasoning | Use |
 | --- | --- | --- | --- |
-| **Direct** | Tiny, clear, low fake-success risk (typo, one file, obvious fix). | No | Manager implements and verifies. No harness files. |
-| **Direct+** | Clear 2–5 step work with one owner. | Chat-only plan optional | Still no Full `workspace/` tree. |
-| **Lite** | Medium work with clean parallel ownership. | Short plan / compact reports | Bounded workers; no full registry by default. |
-| **Full** | Long, risky, resumable, multi-session, evaluator-heavy, or worktree isolation. | `workspace/<slug>/` | Durable state, acceptance registry, traces, TDD gates. |
+| `fast` | GPT-5.6 Luna | `medium` | Simple, mechanically verifiable work. |
+| `main` | GPT-5.6 Luna | `xhigh` | Default high-frequency manager and executor. |
+| `planner` | GPT-5.6 Sol | `high` | Fuzzy goals, architecture, harness design, and synthesis. |
+| `critical_reviewer` | GPT-5.6 Sol | `xhigh` | High risk, worker conflict, or repeated validation failure. |
 
-**Spec Synthesis** is not a fourth mode: it runs first when the goal is fuzzy, improvement-shaped, or easy to fake-complete. Compact synthesis lives in chat or a short note; Full synthesis seeds stage `0.1` via `init_run.py --with-synthesis`.
-
-Hard rules:
-
-- Multi-agent words ≠ must dispatch.
-- Single owner + medium steps → Direct+ (chat plan), not Lite theater.
-- Fuzzy goal ≠ Full harness by default.
-- Improvement-shaped work needs a terminal metric and baseline plan before “optimize”.
-
-### Codex cost-aware routing
-
-Density comes first: a cheap model does not justify spawning a worker. This installation
-uses `fast = Luna medium`, `main = Luna xhigh`, `planner = Sol high`, and
-`critical_reviewer = Sol xhigh`; Terra is intentionally excluded. Use
-`scripts/model_router.py` for deterministic selection and persist the route in Full
-`dispatch-create` records. See `references/model-routing.md`.
-
----
-
-## When To Use
-
-Prefer this skill when the task involves:
-
-- multi-agent / sub-agents / DAG / worktree / 分头处理
-- fuzzy goals that need Spec Synthesis (“faster”, “better”, “more professional”)
-- long, resumable, evidence-verified coordination
-- deciding how much process to apply without wasting tokens
-
-Do not force Full harness or workers for small clear work. If multi-agent is not authorized and not useful, stay single-agent.
-
----
-
-## Operating Flow
-
-```text
-Context Intake
--> Density decision: Direct / synthesis / Lite / Full
--> Optional Spec Synthesis (success, fake-success, accept rules)
--> Execute selected mode
-   Direct: implement, verify, report
-   Lite: coordinate bounded slices, verify, report
-   Full: capability, artifacts, DAG, workers, TDD gates, evaluator
--> Manager re-verify critical evidence
--> Merge / Handoff
-```
-
----
-
-## Full Harness Protocol
-
-Full mode uses a durable protocol for work that needs stronger coordination.
-
-### 1. Mode Selection Gate
-
-The manager records why Direct, Lite, or Full mode is appropriate. Full mode is justified by independent ownership surfaces, long or resumable scope, material verification risk, evaluator value, or isolation and rollback value.
-
-### 2. Capability Gate
-
-Before assigning work, the manager records the runtime capabilities that are actually available:
-
-- real sub-agent or delegation mechanism
-- filesystem write access
-- shell and sandbox limits
-- worktree support
-- browser or UI verification capability
-- instruction files or hooks that can carry protocol rules
-- external services, credentials, and network assumptions
-
-If a capability is unavailable, the manager must choose a fallback such as sequential execution, narrower scope, a decision request, or a stop state.
-
-### 3. State Machine
-
-Full mode advances through explicit states:
-
-```text
-INTAKE -> GATED -> SPECIFIED -> DISPATCHED -> REPORTED -> EVALUATING -> ACCEPTED -> HANDED_OFF
-```
-
-Stop states are first-class:
-
-```text
-BLOCKED -> NEEDS_DECISION -> FAILED
-```
-
-Each state transition should leave a compact trace entry with the reason, owner, evidence path, and next state.
-
-### 4. Acceptance Registry
-
-Acceptance criteria are tracked as structured records. Each record should include:
-
-- criterion
-- owner
-- required evidence
-- status: `pending`, `pass`, `fail`, `blocked`, or `scoped_out`
-- evidence path or command result summary
-
-The manager cannot claim completion while required criteria remain unverified.
-
-### 5. Budget Circuit Breaker
-
-Each stage should have a budget envelope for time, context, tool calls, retries, cost, and external side effects. When a stage exceeds the envelope, the manager records the stop reason and chooses whether to continue, split, reduce scope, or ask for a decision.
-
-### 6. Trace
-
-Trace records the minimum durable evidence needed to resume and audit a run:
-
-- capability gate result
-- state transitions
-- worker report paths
-- evaluator result
-- budget stop or retry reason
-- final acceptance registry
-
-Chat history is not treated as durable task state.
-
----
-
-## Installation
-
-Clone the repository:
+Terra is intentionally excluded from the configured Codex policy. Use the deterministic selector when the route is unclear:
 
 ```bash
-git clone https://github.com/SUNRNEHUI/agent-dispatch-harness.git
-cd agent-dispatch-harness
+python3 scripts/model_router.py --simple --mechanically-verifiable
+python3 scripts/model_router.py --harness-synthesis
+python3 scripts/model_router.py --validation-failures 2
 ```
 
-Create a clean runtime package:
+The profile vocabulary is portable, but model availability is runtime-specific. Claude Code, Grok, and other adapters must report their own mapping or safe fallback; the harness never claims a model switch that the runtime did not confirm.
+
+## Install as a Codex skill
+
+The repository is the source of truth. The runtime package intentionally excludes repository-only docs, caches, generated workspaces, and private configuration.
 
 ```bash
-python3 scripts/sync_version.py
-python3 scripts/package_skill.py --verify-source
-python3 scripts/package_skill.py --output /tmp/agent-dispatch-harness-runtime --force
-```
+git clone https://github.com/SUNRNEHUI/agent-reliability-harness.git
+cd agent-reliability-harness
 
-Install the runtime package into Codex:
-
-```bash
-mkdir -p ~/.codex/skills/agent-dispatch-harness
-rsync -a --delete /tmp/agent-dispatch-harness-runtime/ ~/.codex/skills/agent-dispatch-harness/
-python3 scripts/package_skill.py --check ~/.codex/skills/agent-dispatch-harness
-```
-
-The runtime package contains only the files needed by the skill at execution time.
-
-For Full runs, validate the filled spec before dispatch and use the guarded controller for
-live task/acceptance state:
-
-```bash
-python3 ~/.codex/skills/agent-dispatch-harness/scripts/validate_report.py workspace/<slug>/task_spec.md --type spec --require-filled
-python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py seal workspace/<slug> --reason "reviewed synthesis baseline"
-python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py dispatch-create workspace/<slug> --worker-id <runtime-id> --task-id 1.1 --contract-path tasks/1.1-worker.md --report-path 1.1-worker-report.md
-python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py validate workspace/<slug>
-python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py task-set workspace/<slug> --task-id 1.1 --status ready
-```
-
-Runtime coordination uses guarded schema validation, legal run/task/acceptance/dispatch transitions, typed evidence receipts, atomic JSON replacement, locked JSONL appends, and digest-backed transaction records. Human-authored pre-dispatch state is explicitly bound with `seal`. Protected PASS uses `--evidence-file`, which stores an artifact digest tied to the committed transaction; free-form `--evidence` is supporting context only. `harnessctl.py validate` rejects malformed traces, incomplete transactions, canonical-state or evidence-digest drift, chat-only running workers, unresolved terminal state, and invalid active TDD chronology. `harnessctl.py recover` reconciles interrupted writes when state matches the journal's before/after digest. These are cooperative integrity controls, not protection from a same-user attacker who rewrites code and trace together. Verification defaults to 1800 seconds and requires timeout <= runtime budget.
-
----
-
-## Migration From Earlier Names
-
-Earlier releases used `multi-agent-dispatcher` as the public package name, and some local installs used `multi-agent-orchestrator` as the Codex skill directory. New installs should use `agent-dispatch-harness`.
-
-When upgrading an existing local install, install the new runtime directory first, then remove old local runtime folders if they are still present and no longer needed:
-
-```bash
-rm -rf ~/.codex/skills/multi-agent-dispatcher ~/.codex/skills/multi-agent-orchestrator
-```
-
-This avoids duplicate skill entries that describe the same workflow.
-
----
-
-## Runtime Package Contents
-
-The runtime package includes:
-
-- `VERSION`, `SKILL.md`, `master-prompt.md`, `sub-prompt.md`, `agents/openai.yaml`
-- `adapters/` — `codex.md`, `claude-code.md`, `universal.md`
-- `references/` — protocol, lanes, Spec Synthesis, proportionality, model routing, TDD gates, examples
-- `templates/` — Full and Lite harness templates
-- `scripts/` — `init_run.py`, `harness_schema.py`, `harnessctl.py`, `harness_test_run.py`, `model_router.py`, `runtime_state.py`, `validate_workspace.py`,
-  `status.py`, `tdd_gate_check.py`, `validate_report.py`, `score_harness.py`, `score_skill_protocol.py`
-
-The authoritative file list is `scripts/package_skill.py:RUNTIME_FILES`.
-
-It intentionally excludes:
-
-- `README.md`
-- `README.zh-CN.md`
-- `scripts/sync_version.py`
-- `scripts/package_skill.py`
-- `.git`
-- generated workspace artifacts
-- local memory files
-- session logs
-- caches and bytecode
-- private configuration
-- credentials or API keys
-
----
-
-## Usage Examples
-
-Explicit multi-agent request:
-
-```text
-This project has frontend, backend, and test work. Use multiple agents where useful, and provide verification evidence.
-```
-
-Small task with multi-agent wording:
-
-```text
-Use multi-agent if needed to fix this typo.
-```
-
-Expected behavior: the manager should choose Direct mode because dispatch overhead is not justified.
-
-Long task requiring durable coordination:
-
-```text
-Refactor checkout, update API contracts, migrate tests, and verify the UI flow. Use sub-agents and keep the work resumable.
-```
-
-Expected behavior: the manager should choose Lite or Full mode depending on risk, available tools, and verification requirements.
-
----
-
-## Artifact Initialization
-
-For Full mode, initialize a durable run:
-
-```bash
-python3 scripts/init_run.py \
-  --project-root /path/to/project \
-  --title "Checkout Refactor" \
-  --agents frontend,backend,tests
-```
-
-This creates:
-
-```text
-/path/to/project/workspace/checkout-refactor/
-├── acceptance_registry.json
-├── capability_snapshot.md
-├── task_spec.md
-├── progress.md
-├── run_state.json
-├── trace.jsonl
-├── tdd_trace.jsonl
-├── evaluator_report.md
-└── tasks/
-    ├── 1.1-frontend.md
-    ├── 1.2-backend.md
-    └── 1.3-tests.md
-```
-
----
-
-## Report Validation
-
-Validate generated reports before relying on them:
-
-```bash
-python3 scripts/validate_report.py <artifact-dir>/1.1-frontend-report.md --type subagent
-```
-
-Supported artifact types:
-
-- `spec`
-- `progress`
-- `subagent`
-- `evaluator`
-
-When protocol files such as `acceptance_registry.json` or `run_state.json` sit next to a validated artifact, the validator also checks those files.
-
-For TDD-sensitive work, validate the dedicated TDD trace:
-
-```bash
-python3 scripts/tdd_gate_check.py <artifact-dir>/tdd_trace.jsonl
-```
-
-The checker validates chronology for strict TDD, accepts test-first gap evidence when recorded, and rejects missing substitute reasons.
-
-Use the test wrapper when available so trace events are generated by the runtime command runner rather than hand-written by an agent:
-
-```bash
-python3 scripts/harness_test_run.py \
-  --trace <artifact-dir>/tdd_trace.jsonl \
-  --task-id 1.1 \
-  --gate-mode strict_tdd \
-  --phase RED \
-  --run-state <artifact-dir>/run_state.json \
-  -- pytest path/to/test.py
-```
-
-For strict TDD cycles, `tdd_gate_check.py --source-path <file>` can add filesystem mtime checks for the files changed in that cycle.
-
----
-
-## Repository Layout
-
-```text
-agent-dispatch-harness/
-├── SKILL.md
-├── README.md
-├── README.zh-CN.md
-├── adapters/
-├── agents/
-├── references/
-├── scripts/
-├── templates/
-├── master-prompt.md
-└── sub-prompt.md
-```
-
-Detailed protocol material lives in `references/`. Runtime-specific guidance lives in `adapters/`.
-
----
-
-## Runtime Adapters
-
-The protocol is runtime-neutral. Adapters describe how to apply it in specific agent environments:
-
-- [Codex adapter](adapters/codex.md)
-- [Claude Code adapter](adapters/claude-code.md)
-- [Harness protocol reference](references/harness-protocol.md)
-
-Adapters do not change the protocol. They map the same gates, artifacts, evidence rules, and fallback behavior to the available runtime controls.
-
----
-
-## Relationship To Superpowers
-
-This project is independent and does not require Superpowers to run.
-
-The design is influenced by [obra/superpowers](https://github.com/obra/superpowers), a software development methodology by Jesse Vincent. Agent Dispatch Harness adopts compatible engineering patterns such as test-first evidence, fresh-context sub-agents, review gates, worktree isolation, and verification before completion.
-
-The project does not copy Superpowers skill bodies and does not require the Superpowers plugin. The relationship is:
-
-```text
-agent-dispatch-harness = routing and harness authority
-Superpowers-style methods = optional supporting engineering practices
-```
-
-Mode selection always runs first. Supporting methods are applied only when they fit the selected execution mode.
-
----
-
-## Version management
-
-Single source of truth:
-
-```bash
-# VERSION file holds MAJOR.MINOR.PATCH (no leading v)
-cat VERSION
-
-# Rewrite README / SKILL current-version lines from VERSION
 python3 scripts/sync_version.py --fix --date 2026-07-14
-
-# Verify only
-python3 scripts/sync_version.py
-
-# Package and check install
 python3 scripts/package_skill.py --verify-source
-python3 scripts/package_skill.py --output /tmp/agent-dispatch-harness-runtime --force
-python3 scripts/package_skill.py --check /tmp/agent-dispatch-harness-runtime
+python3 scripts/package_skill.py \
+  --output /tmp/agent-reliability-harness-runtime \
+  --force
+
+mkdir -p ~/.codex/skills/agent-reliability-harness
+rsync -a --delete \
+  /tmp/agent-reliability-harness-runtime/ \
+  ~/.codex/skills/agent-reliability-harness/
+
+python3 scripts/package_skill.py --check \
+  ~/.codex/skills/agent-reliability-harness
 ```
 
-Release checklist:
+Then invoke it when the task has an explicit multi-agent, delegation, worktree, DAG, resumability, or evidence-risk trigger:
 
-1. Bump `VERSION`.
-2. Run `sync_version.py --fix --date <YYYY-MM-DD>`.
-3. Update bilingual release notes in this README and `README.zh-CN.md`.
-4. Run `python3 scripts/test_runtime_behavior.py` and `python3 scripts/score_skill_protocol.py` (if available).
-5. Commit on a `release/vX.Y.Z` branch, open PR or merge to `main`, tag `vX.Y.Z`, publish GitHub Release.
+```text
+$agent-reliability-harness
+```
 
----
+## Full Harness at a glance
 
-## Release History
+Full mode is deliberately explicit. A run normally contains:
 
-### v6.3.0
+```text
+workspace/<run-slug>/
+├── task_spec.md              # executable goal, constraints, and stop conditions
+├── acceptance_registry.json  # criteria and pass algorithms
+├── run_state.json            # lifecycle, tasks, routing, and session state
+├── progress.md               # compact human-readable ledger
+├── trace.jsonl               # append-only manager trace
+├── tdd_trace.jsonl           # test-first or substitute-verification trace
+├── capability_snapshot.md    # runtime capabilities and fallbacks
+├── tasks/                    # bounded worker contracts
+└── reports/                  # worker and evaluator reports
+```
 
-- Added executable cost-aware Codex routing: Luna medium (`fast`), Luna xhigh (`main`), Sol high (`planner`), and Sol xhigh (`critical_reviewer`); Terra is excluded by policy.
-- Added deterministic escalation for high risk, worker conflict, and repeated validation failure.
-- Persisted runtime, profile, requested/resolved model, reasoning effort, route reason, and escalation count in Full dispatch records.
-- Added routing behavior regressions, evaluation cases, runtime capability fields, and packaged routing guidance/tooling.
+Completion is blocked when required acceptance is pending, evidence is missing or stale, a protected dispatch is only a chat claim, or the run exceeds a defined stop condition.
 
-### v6.2.0
+## Runtime support
 
-- Added controller-generated typed artifact evidence with SHA-256 and committed transaction receipts; worker/free-form self-report can no longer complete protected PASS.
-- Bound new Full canonical state to initialization and subsequent transaction digests, with an explicit pre-dispatch `seal` for reviewed human-authored state.
-- Added durable `dispatch-create` / `dispatch-update` worker lifecycle records and validation that rejects chat-only running workers after dispatch.
-- Tightened strict spec validation against heading echoes and generic completion words without turning the advisory scorer into a product gate.
-- Added RED/GREEN regression coverage and live dogfood for evidence, state binding, semantic specs, and dispatch persistence.
+| Runtime | Role | Notes |
+| --- | --- | --- |
+| Codex | First-class adapter | Supports the configured profile table and durable dispatch records. |
+| Claude Code | Portable adapter | Uses the same protocol; model selection follows the active runtime. |
+| Grok and other agents | Universal adapter | Capability checks and safe fallback are required. |
 
-### v6.1.0
+This is a protocol and skill package, not a hosted agent service. It does not replace the model runtime, sandbox, approval system, or repository CI.
 
-- Unified runtime schema version/status constants and transition rules in `harness_schema.py`.
-- Added `harnessctl.py` for guarded run, task, and acceptance transitions, evidence requirements, artifact locking, and transaction journaling.
-- Added deterministic integrity validation for malformed JSONL, empty acceptance registries, incomplete transactions, terminal cross-file state, and active TDD chronology.
-- Added digest-backed transaction recovery and guarded top-level run transitions with stage rollup.
-- Hardened Markdown validation for numbered Chinese headings, fenced examples, duplicate aliases, empty sections, and placeholders.
-- Removed example RED/GREEN events from the runtime TDD trace template so templates cannot act as fake evidence.
-- Added regression coverage for the new runtime integrity and localization behavior.
+## Repository layout
 
-### v6.0.0
+```text
+SKILL.md                 # trigger rules and manager protocol
+master-prompt.md         # manager-facing prompt
+sub-prompt.md            # bounded worker contract
+agents/                  # runtime entry metadata
+adapters/                # Codex, Claude Code, and universal mappings
+references/              # deeper protocol and evaluation guidance
+templates/               # Lite and Full artifact shapes
+scripts/                 # initialization, routing, validation, status, packaging
+README.md                # public English documentation
+README.zh-CN.md          # public Chinese documentation
+```
 
-- Repositioned the skill as a **universal task OS**: proportional density (Direct / Lite / Full), not multi-agent-first.
-- Added **Spec Synthesis** for fuzzy and improvement-shaped goals (`references/spec-synthesis.md`, `init_run.py --with-synthesis`).
-- Added proportionality and progressive-load guidance (`references/proportionality.md`, shorter `SKILL.md` / prompts).
-- Added universal runtime adapter and optional harness quality scoring (`adapters/universal.md`, `scripts/score_harness.py`, `scripts/score_skill_protocol.py`).
-- Hardened acceptance language: manager re-verify required; `score_harness` is never product PASS.
-- Preserved mainline runtime safety: cooperative manager state/trace API, atomic JSON, locked JSONL, timeout budgets, workspace binding checks.
-- Public README rewritten for the v6 positioning; version management documented.
+## Development and verification
 
-### v5.11.0
+The project uses Python's standard library for its runtime scripts. Before opening a change:
 
-- Streamlined orchestration and added a stricter completion confidence gate (tagged release; see GitHub Releases).
+```bash
+python3 -m py_compile scripts/*.py
+python3 -m json.tool templates/run_state.json >/dev/null
+python3 -m json.tool templates/acceptance_registry.json >/dev/null
+python3 scripts/test_runtime_behavior.py
+python3 scripts/package_skill.py --verify-source
+python3 scripts/package_skill.py --output /tmp/agent-reliability-harness-runtime --force
+python3 scripts/package_skill.py --check /tmp/agent-reliability-harness-runtime
+git diff --check
+```
 
-### v5.10.0
+When runtime behavior changes, add or update a behavioral test first. When public behavior or version changes, keep this README and `README.zh-CN.md` structurally aligned.
 
-- GPT-5.6-aware dispatch routing notes (tagged release; see GitHub Releases).
+## Migration from the previous name
 
-### v5.9.0
+`Agent Dispatch Harness` and the earlier `Multi-Agent Dispatcher` name are retired public names. Existing installations should be moved to the new directory so Codex does not discover duplicate skills:
 
-- Added a proportional Completion Confidence Loop to check final claims against fresh evidence before handoff.
-- Expanded Verification and Evaluator guidance to expose missing checks, stale evidence, stubs, TODOs, mocks, and unverified critical paths.
-- Enhanced `scripts/status.py` with task completion, acceptance rollup, evidence-gap detection, confidence bands, and next-verification guidance.
-- Added lightweight confidence and evidence-gap prompts to the progress ledger and Lite plan templates.
-- Preserved right-sized execution: Direct remains artifact-free, Lite remains compact, and Full remains the durable protocol for high-risk or resumable work.
-- Added no new artifact type.
+```bash
+rsync -a --delete \
+  /tmp/agent-reliability-harness-runtime/ \
+  ~/.codex/skills/agent-reliability-harness/
+rm -rf ~/.codex/skills/agent-dispatch-harness
+rm -rf ~/.codex/skills/multi-agent-dispatcher
+rm -rf ~/.codex/skills/multi-agent-orchestrator
+```
 
-### v5.8.0
+The old GitHub repository URL redirects to the renamed repository after the migration.
 
-- Added `VERSION` plus `scripts/sync_version.py` so current-version references can be checked or updated from one source.
-- Added runtime package checks with `scripts/package_skill.py --verify-source` and `--check <install-dir>`.
-- Added Lite Orchestration artifacts through `templates/lite_plan.md`, `templates/lite_review.md`, and `init_run.py --mode lite`.
-- Kept `progress.md` lightweight and added `scripts/status.py` for a generated single-screen summary from `run_state.json`.
-- Added validator support for `lite_plan`, `lite_review`, and Lite `run_state.json`, plus runtime behavior tests.
-- Kept automated mode-router evaluation out of this release; `references/eval_cases.md` remains the human-readable regression set.
+## Contributing
 
-### v5.7.0
+Good contributions make the harness more reliable without making every task heavier. Prefer:
 
-- Added an explicit State and Memory boundary for Full Harness runs.
-- Clarified that `task_spec.md` is the local human-readable plan/spec, while `run_state.json` is the machine-readable live state.
-- Added `state_layers` for Working State, Session State, Execution Log, and Memory Boundary.
-- Added `references/state-memory-boundary.md` and included it in runtime packaging.
-- Updated validation to require the core `state_layers` structure in `run_state.json`.
+- a failing behavioral case before a protocol or validator change;
+- the smallest mode that preserves evidence quality;
+- explicit ownership and bounded reports for parallel work;
+- documentation changes that stay synchronized in English and Chinese;
+- reproducible commands and honest unresolved risks.
 
-### v5.6.0
+## Further reading
 
-- Renamed the public project and runtime skill from Multi-Agent Dispatcher to Agent Dispatch Harness.
-- Updated repository URLs, install paths, runtime metadata, and bilingual documentation for the new name.
-- Renamed the TDD command wrapper to `scripts/harness_test_run.py` and updated trace `source` values.
-- Added migration guidance for older `multi-agent-dispatcher` and `multi-agent-orchestrator` local installs.
-- Preserved the Direct, Lite, and Full mode model, with Full Harness remaining the durable advanced execution protocol.
-
-### v5.5.0
-
-- Added wrapper-generated TDD trace support for verification commands, now exposed as `scripts/harness_test_run.py`.
-- Extended `scripts/tdd_gate_check.py` with optional `--source-path` mtime checks for strict TDD cycles.
-- Added `tdd_current_cycle_context` to run-state templates and initialization output.
-- Clarified that normal workers should prefer wrapper-generated trace evidence over hand-written TDD traces.
-- Added retry, checkpoint, and rollback guidance to Bugfix and Feature-Spec lanes without allowing automatic `git reset --hard` in the main worktree.
-
-### v5.4.0
-
-- Added Bugfix Lane and Feature-Spec Lane references for task-type-specific development flow.
-- Added `templates/tdd_trace.jsonl` and `scripts/tdd_gate_check.py` for runtime-neutral TDD chronology validation.
-- Updated run initialization and runtime packaging so TDD trace artifacts and checker scripts are included.
-- Tightened sub-agent and evaluator templates to require trace path, chronology summary, first production edit, and unverified critical path fields.
-- Expanded evaluation cases for code-before-RED, passing-test-as-RED, shell-bypass, UI-only-unit-test, self-report-only, and missing no-test-reason failures.
-- Added `.gitignore` protection for generated workspaces, worktrees, and Python cache files.
-
-### v5.3.0
-
-- Added a two-level testing model: `Test-First Evidence Gate` and `Strict TDD Gate`.
-- Added `references/tdd-gates.md` for RED/GREEN, substitute verification, and manager acceptance rules.
-- Added required `Test-First Or Substitute Verification` fields to sub-agent reports.
-- Extended protocol JSON records with `verification_gate`.
-- Updated validation so sub-agent reports and protocol records cannot omit the testing gate structure.
-
-### v5.2.2
-
-- Rewrote the English and Chinese README files in a formal public documentation style.
-- Clarified the project positioning, execution modes, installation flow, runtime package boundary, and Superpowers acknowledgement.
-- No runtime protocol changes.
-
-### v5.2.1
-
-- Added bilingual public documentation.
-- Added an explicit acknowledgement of Superpowers-inspired engineering patterns.
-- Added `scripts/package_skill.py` for clean runtime-only packaging.
-- Consolidated Direct, Lite, and Full routing guidance in the public README.
-- Expanded evaluation coverage for TDD evidence, review separation, Superpowers interaction, and clean sharing.
-
-### v5.0.1
-
-- Added a right-sizing gate before capability checks and DAG creation.
-- Clarified that explicit multi-agent wording authorizes evaluation, not automatic dispatch.
-- Added guidance to skip workers, worktrees, and artifacts for small tasks.
-
-### v5.0.0
-
-- Upgraded the project from protocol guidance into a manager-enforced harness protocol.
-- Added capability snapshots, `run_state.json`, `acceptance_registry.json`, and `trace.jsonl`.
-- Added evaluator validation and runtime adapters for Codex and Claude Code-style environments.
-
-### v4.0.0
-
-- Introduced the closed-loop multi-agent protocol.
-- Added artifact initialization, report validation, role boundaries, stop conditions, and evaluator templates.
-
----
-
-## License
-
-No license file is currently included in this repository.
+- [Harness protocol](references/harness-protocol.md)
+- [Cost-aware model routing](references/model-routing.md)
+- [Proportionality guide](references/proportionality.md)
+- [Spec Synthesis](references/spec-synthesis.md)
+- [Evaluation cases](references/eval_cases.md)
+- [TDD gates](references/tdd-gates.md)

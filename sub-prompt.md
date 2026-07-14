@@ -44,4 +44,4 @@ Scope explosion · verify failed twice · destructive/prod/paid/permission ops �
 
 ---
 
-*Sub-Agent Prompt v6.3.0 | 2026-07-14*
+*Sub-Agent Prompt v7.0.0 | 2026-07-14*

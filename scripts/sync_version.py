@@ -23,8 +23,8 @@ VERSION_PATTERNS = {
     ),
     "SKILL.md": (
         (
-            re.compile(r"^\*Agent Dispatch Harness v[^|]+ \| [^*]+\*$", re.MULTILINE),
-            "*Agent Dispatch Harness v{version} | {date}*",
+            re.compile(r"^\*Agent Reliability Harness v[^|]+ \| [^*]+\*$", re.MULTILINE),
+            "*Agent Reliability Harness v{version} | {date}*",
         ),
     ),
     "master-prompt.md": (
