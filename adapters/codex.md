@@ -1,6 +1,6 @@
 # Codex Runtime Adapter
 
-This adapter maps the v5 harness protocol onto Codex-style runtimes. It is not a feature comparison; it is a checklist of practical control points the manager must use or explicitly mark unavailable.
+This adapter maps the harness protocol onto Codex-style runtimes. Prefer `SKILL.md` v5.8+ density rules and `adapters/universal.md` first; this file is Codex-specific control points only.
 
 ## Persistent Instructions
 
@@ -101,5 +101,3 @@ For complex runs, keep trace in the progress ledger or a dedicated trace file un
 - budget breaker events
 
 The final response should summarize evidence, not replace the trace.
-
-Codex workers follow the cooperative protocol and keep writes task-local. The API guard is not a same-user security boundary; native sandbox/OS permissions provide isolation. Managers independently provide `--workspace` for git-based binding validation.

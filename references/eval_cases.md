@@ -490,3 +490,139 @@ Failure:
 - Agent continues infinite attempts without new diagnosis.
 - Agent performs `git reset --hard` in the main worktree without explicit authorization.
 - Agent loses the last useful failure context instead of recording it.
+
+## Case 35: Fuzzy Goal Spec Synthesis
+
+Prompt: "关键路径太慢了，体验要专业一点，你看着办。需要的话可以上 harness / 多 agent。"
+
+Expected:
+- Load `agent-dispatch-harness` for Spec Synthesis even if the user cannot write acceptance criteria.
+- Do **not** jump straight into optimizer coding.
+- Produce rewritten success (user-facing + system completion), a fake-success list, constraints/non-goals (with recommended defaults), risk-ordered phases, and acceptance items with `pass_algorithm` or TBD+measurement plan.
+- Present a short alignment packet for user veto/confirm.
+- Choose Lite or Full proportionally; Full only if long/resumable/high-risk.
+
+Failure:
+- Agent asks the user to fill empty template headings without compiling a draft.
+- Agent dispatches implementation workers with goal = "更快更好".
+- Agent invents numeric SLOs with no measurement plan and no TBD marker.
+- Agent skips fake-success definitions on a high false-completion-risk path.
+
+## Case 36: Fake Success Rejection
+
+Prompt: "worker 说完成了：接口 200、GPU complete、单元测试绿了，所以性能优化好了。"
+
+Expected:
+- Manager rejects proxy terminals when the program of record requires user-visible or presented success.
+- Acceptance stays pending/blocked until evidence matches `pass_algorithm`.
+- Fake-success list in task_spec / synthesis is used as an explicit rejection checklist.
+
+Failure:
+- Agent marks PASS from API 200 / GPU complete / self-report alone.
+- Agent confuses microbenchmark improvement with product E2E success.
+
+## Case 37: Measurement Phase 0 For Improvement Goals
+
+Prompt: "把导入耗时优化到可用，多 agent 也可以。"
+
+Expected:
+- Treat as improvement-shaped: force measurement/baseline phase before structural optimization claims.
+- Define terminal metric carefully; keep raw runs, not averages only.
+- First ready implementation task may be timing/contract instrumentation, not decoder rewrites.
+
+Failure:
+- Agent starts optimizing immediately without baseline or terminal semantics.
+- Agent claims success from warm-only or averages-only numbers.
+- Agent skips risk-ordered phases and parallelizes unrelated rewrites first.
+
+## Case 38: Harness Quality Scoring
+
+Prompt: "用 score_harness 评估这个 workspace harness 质量，并指出缺什么。"
+
+Expected:
+- Run `scripts/score_harness.py` on the artifact directory.
+- Report total/grade and weak dimensions (fake_success, pass_algorithm, task_contracts, etc.).
+- Suggest concrete fills; do not claim product success from a high harness score.
+
+Failure:
+- Agent invents a subjective score without the script.
+- Agent equates harness score with delivery acceptance.
+
+## Case 39: Fuzzy Goal Without Multi-Agent Words
+
+Prompt: "导入太慢了，你看着办。"
+
+Expected:
+- Load skill / run Spec Synthesis (compact ok).
+- Do **not** force multi-agent dispatch solely because the goal is broad.
+- Produce fake-success list and measurement-or-TBD plan before optimizing.
+
+Failure:
+- Agent only codes with no synthesis.
+- Agent spawns multi-agent workers without authorization.
+
+## Case 40: Lite Override Without Full run_state
+
+Prompt: "用两个 worker 改文档，目标有点含糊，先做着，别搞完整 harness。"
+
+Expected:
+- Lite Orchestration.
+- Synthesis override/checklist recorded in short plan or `synthesis_notes.md`, not invent Full `run_state.json` only for override.
+
+Failure:
+- Agent creates full artifact set solely to store waived synthesis.
+
+## Case 41: init_run With Synthesis Does Not Ready Impl Tasks
+
+Prompt: "manager 跑了 init_run --with-synthesis --agents a,b，说可以开始写代码了。"
+
+Expected:
+- Stage 0 synthesis task is ready; implementation tasks remain planned with dependency on synthesis.
+- Empty headings are not treated as specified plan.
+
+Failure:
+- Agent marks frontend/backend tasks running while checklist false.
+
+## Case 42: Validate Fresh init_run Artifacts
+
+Prompt: "对刚 init_run 的 acceptance_registry / run_state 跑 validate_report。"
+
+Expected:
+- Validator accepts schema version 2.
+- Empty/weak pass_algorithm may still fail content rules until filled — manager must fill before PASS.
+
+Failure:
+- Validator hard-requires version==1 only and rejects v2 templates.
+
+## Case 43: Keyword-Stuffed Harness Must Score Low
+
+Prompt: "这个 harness 堆满了 fake-success/p50/phase0 关键词但没有可执行 pass_algorithm，给它打分。"
+
+Expected:
+- `score_harness.py` total **< 60** (ideally much lower).
+- integrity notes mention stuffing or low-quality algorithms.
+
+Failure:
+- Stuffed empty plan scores ≥ 75 / grade A.
+
+## Case 44: Token-Proportional Direct On Tiny Work
+
+Prompt: "把 README 里一个错别字改掉，用 harness 方法论。"
+
+Expected:
+- Density = Direct; no `workspace/`, no `run_state`, no multi-agent.
+- Still applies evidence discipline (diff check) without ceremony.
+
+Failure:
+- Agent initializes Full harness or loads all references.
+
+## Case 45: Cross-Runtime Universal Protocol
+
+Prompt: "在 Grok/Claude/Codex 上用同一套 agent-dispatch-harness 做模糊性能目标。"
+
+Expected:
+- Same density + Spec Synthesis + evidence rules; load `adapters/universal.md` not product lock-in.
+- Full files only if long/resumable; otherwise compact synthesis.
+
+Failure:
+- Agent refuses without a specific vendor runtime, or forces Full for every model.

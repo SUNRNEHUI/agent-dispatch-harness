@@ -7,12 +7,15 @@ This reference defines the v5 core protocol. It is intentionally separate from a
 The harness turns multi-agent orchestration from advice into a required control loop:
 
 1. choose Direct, Lite, or Full mode
-2. discover actual runtime capabilities
-3. create a bounded spec and acceptance registry
-4. advance through explicit states
-5. collect worker, testing-gate, review, and evaluator evidence
-6. stop on budget or safety breaks
-7. claim completion only when required acceptance records pass
+2. when the goal is fuzzy or false-completion risk is high, run Spec Synthesis before implementation dispatch
+3. discover actual runtime capabilities
+4. create a bounded spec and acceptance registry with pass algorithms
+5. advance through explicit states
+6. collect worker, testing-gate, review, and evaluator evidence
+7. stop on budget or safety breaks
+8. claim completion only when required acceptance records pass
+
+Spec Synthesis details: `references/spec-synthesis.md`. Harness instance quality can be scored with `scripts/score_harness.py` (harness quality ≠ product success).
 
 ## Mode Selection Gate
 
@@ -158,22 +161,6 @@ The manager can say the task is complete only when:
 - trace points to the evidence used for completion
 
 Worker success is not completion. A worker report is input to acceptance, not the acceptance decision itself.
-
-## Completion Confidence Loop
-
-Before final handoff, run a proportional confidence loop. It is a claim check, not a new artifact requirement.
-
-1. Restate the completion claim in one sentence.
-2. Map the claim to the freshest available evidence: command results, diff or output review, browser/API/readback checks, worker reports, evaluator reports, or acceptance records.
-3. List anything that could still make the claim false: missing checks, stale evidence, self-report-only evidence, stubs, TODOs, mocks, skipped paths, unavailable tools, or assumptions.
-4. Set completion confidence:
-   - `high`: required evidence passed and no material unverified path remains.
-   - `medium`: core evidence passed, and remaining gaps are non-critical and disclosed.
-   - `low`: important evidence is missing, stale, self-reported only, or inconsistent with the claim.
-   - `blocked`: required evidence failed, is unavailable without a decision, or an evaluator/acceptance item blocks completion.
-5. If confidence is `low` or `blocked`, do not claim completion. Run the missing check, create a repair or decision item, or hand off as blocked.
-
-Direct mode keeps this as a short final self-check. Lite Orchestration may capture it in compact plan or report notes. Full Harness ties it to the acceptance registry, trace, progress ledger, and evaluator report when present.
 
 ## What Gets Thinner As Models Improve
 
