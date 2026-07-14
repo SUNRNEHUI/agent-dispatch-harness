@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
 from pathlib import Path
 from datetime import datetime, timezone
+
+from harness_schema import EVIDENCE_POLICY, MODEL_ROUTING_POLICY, SCHEMA_VERSION
 
 
 TEMPLATE_MAP = {
@@ -330,7 +333,7 @@ def main() -> int:
     if args.mode == "lite":
         protocol_files = {
             "run_state.json": {
-                "version": 1,
+                "version": SCHEMA_VERSION,
                 "created_at": now,
                 "updated_at": now,
                 "title": args.title,
@@ -363,6 +366,10 @@ def main() -> int:
                 f"- created_at: {now}\n"
                 f"- title: {args.title}\n"
                 "- delegation_mechanism:\n"
+                "- runtime_identity:\n"
+                "- per_agent_model_selection:\n"
+                "- available_model_profiles:\n"
+                "- model_routing_fallback:\n"
                 "- available_tools:\n"
                 "- unavailable_tools:\n"
                 "- constraints:\n"
@@ -374,7 +381,8 @@ def main() -> int:
                 "  - memory_boundary: candidates only; no automatic memory promotion\n"
             ),
             "acceptance_registry.json": {
-                "version": 1,
+                "version": SCHEMA_VERSION,
+                "evidence_policy": EVIDENCE_POLICY,
                 "created_at": now,
                 "title": args.title,
                 "tdd_trace_path": "tdd_trace.jsonl",
@@ -384,6 +392,7 @@ def main() -> int:
                         "description": "",
                         "status": "pending",
                         "required_evidence": [],
+                        "pass_algorithm": "",
                         "evidence": [],
                         "owner": "main-agent",
                         "verification_gate": default_verification_gate(),
@@ -406,7 +415,9 @@ def main() -> int:
             + "\n",
             "tdd_trace.jsonl": "",
             "run_state.json": {
-                "version": 1,
+                "version": SCHEMA_VERSION,
+                "evidence_policy": EVIDENCE_POLICY,
+                "routing_policy": MODEL_ROUTING_POLICY,
                 "created_at": now,
                 "updated_at": now,
                 "title": args.title,
@@ -440,6 +451,16 @@ def main() -> int:
                 "stop_reason": "",
             },
         }
+
+    if args.mode == "full":
+        trace_event = json.loads(str(protocol_files["trace.jsonl"]))
+        trace_event["state_digests"] = {
+            filename: hashlib.sha256(
+                (json.dumps(protocol_files[filename], ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+            ).hexdigest()
+            for filename in ("run_state.json", "acceptance_registry.json")
+        }
+        protocol_files["trace.jsonl"] = json.dumps(trace_event, ensure_ascii=False) + "\n"
 
     for output_name, content in protocol_files.items():
         output_path = artifact_dir / output_name

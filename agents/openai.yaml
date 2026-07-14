@@ -5,6 +5,8 @@ interface:
     Use $agent-dispatch-harness as a universal task OS (Codex/Claude/Grok-agnostic).
     First decide density: Direct for tiny clear work (no harness files); compact Spec Synthesis
     for fuzzy or fake-success-prone goals; Lite for bounded parallel ownership; Full only for
-    long/resumable/high-risk work. Do not spawn multi-agent unless authorized and ownership is clean.
-    Compile vague goals into success/fake-success/accept rules before coding. Accept only on external
-    evidence. Keep chat short; load references only when stuck. Prefer proportionality over ceremony.
+    long/resumable/high-risk work. After density, choose a cost-aware runtime profile and record
+    the requested versus resolved model when available. Do not spawn multi-agent unless authorized
+    and ownership is clean. Compile vague goals into success/fake-success/accept rules before coding.
+    Accept only on external evidence. Keep chat short; load references only when stuck. Prefer
+    proportionality over ceremony.

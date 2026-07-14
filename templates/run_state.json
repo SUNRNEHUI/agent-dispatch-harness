@@ -1,5 +1,7 @@
 {
-  "version": 2,
+  "version": 1,
+  "evidence_policy": "typed-v1",
+  "routing_policy": "cost-aware-v1",
   "created_at": "",
   "updated_at": "",
   "title": "",
@@ -39,9 +41,24 @@
     "open_questions": []
   },
   "state_layers": {
+    "working_state": {
+      "current_stage": "0",
+      "current_task": "",
+      "active_blockers": [],
+      "volatile_notes": [],
+      "updated_at": ""
+    },
     "session_state": {
       "shared_decisions": [],
       "shared_assumptions": [],
+      "artifact_paths": {
+        "task_spec": "task_spec.md",
+        "progress": "progress.md",
+        "acceptance_registry": "acceptance_registry.json",
+        "trace": "trace.jsonl",
+        "tdd_trace": "tdd_trace.jsonl"
+      },
+      "delegation_state": [],
       "document_priority": [
         "task_spec.md",
         "acceptance_registry.json",
@@ -49,6 +66,16 @@
         "tasks/*",
         "review prose"
       ]
+    },
+    "execution_log": {
+      "trace_path": "trace.jsonl",
+      "tdd_trace_path": "tdd_trace.jsonl",
+      "append_only": true
+    },
+    "memory_boundary": {
+      "policy": "Do not write cross-task memory into run artifacts by default.",
+      "memory_candidates": [],
+      "promotion_required": "user_approval_or_project_doc_update"
     }
   },
   "stages": [

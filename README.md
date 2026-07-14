@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness (formerly Multi-Agent Dispatcher) is a **runtime-agnostic task OS** for coding agents. It helps any model (Codex, Claude Code, Grok, and similar) choose the lightest process that still makes false completion hard: from one-shot Direct fixes to durable Full harness runs with evidence gates.
 
-Current version: **v6.0.0** · 2026-07-14
+Current version: **v6.3.0** · 2026-07-14
 
 ---
 
@@ -36,6 +36,7 @@ Sub-agents execute bounded slices only. They never own final acceptance.
 - **Density decision:** stop at the lightest mode that controls false completion (Direct → synthesis → Lite → Full).
 - **Spec Synthesis:** compile fuzzy or improvement-shaped goals into executable contracts before coding.
 - **Selective delegation:** spawn workers only with clean ownership and real coordination benefit.
+- **Cost-aware model routing:** Codex defaults to Luna medium for simple verified work, Luna xhigh for the main execution loop, Sol high for planning, and Sol xhigh for critical review.
 - **Durable Full harness:** `run_state`, acceptance registry, traces, and task contracts under `workspace/<slug>/`.
 - **Runtime TDD evidence:** strict TDD, test-first evidence, substitute verification, and non-applicable gates with wrapper-generated traces.
 - **Evidence-based acceptance:** tests, builds, logs, browser checks, screenshots, CI, or evaluator reports — never self-report alone.
@@ -62,6 +63,14 @@ Hard rules:
 - Single owner + medium steps → Direct+ (chat plan), not Lite theater.
 - Fuzzy goal ≠ Full harness by default.
 - Improvement-shaped work needs a terminal metric and baseline plan before “optimize”.
+
+### Codex cost-aware routing
+
+Density comes first: a cheap model does not justify spawning a worker. This installation
+uses `fast = Luna medium`, `main = Luna xhigh`, `planner = Sol high`, and
+`critical_reviewer = Sol xhigh`; Terra is intentionally excluded. Use
+`scripts/model_router.py` for deterministic selection and persist the route in Full
+`dispatch-create` records. See `references/model-routing.md`.
 
 ---
 
@@ -190,7 +199,18 @@ python3 scripts/package_skill.py --check ~/.codex/skills/agent-dispatch-harness
 
 The runtime package contains only the files needed by the skill at execution time.
 
-Runtime coordination uses a cooperative manager-only state/trace API guard, atomic JSON replacement, locked JSONL appends, and workspace identity read independently from git. This guard can be bypassed by a same-user process writing files directly; isolation depends on native sandbox/OS permissions. Verification defaults to 1800 seconds and requires timeout <= runtime budget.
+For Full runs, validate the filled spec before dispatch and use the guarded controller for
+live task/acceptance state:
+
+```bash
+python3 ~/.codex/skills/agent-dispatch-harness/scripts/validate_report.py workspace/<slug>/task_spec.md --type spec --require-filled
+python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py seal workspace/<slug> --reason "reviewed synthesis baseline"
+python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py dispatch-create workspace/<slug> --worker-id <runtime-id> --task-id 1.1 --contract-path tasks/1.1-worker.md --report-path 1.1-worker-report.md
+python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py validate workspace/<slug>
+python3 ~/.codex/skills/agent-dispatch-harness/scripts/harnessctl.py task-set workspace/<slug> --task-id 1.1 --status ready
+```
+
+Runtime coordination uses guarded schema validation, legal run/task/acceptance/dispatch transitions, typed evidence receipts, atomic JSON replacement, locked JSONL appends, and digest-backed transaction records. Human-authored pre-dispatch state is explicitly bound with `seal`. Protected PASS uses `--evidence-file`, which stores an artifact digest tied to the committed transaction; free-form `--evidence` is supporting context only. `harnessctl.py validate` rejects malformed traces, incomplete transactions, canonical-state or evidence-digest drift, chat-only running workers, unresolved terminal state, and invalid active TDD chronology. `harnessctl.py recover` reconciles interrupted writes when state matches the journal's before/after digest. These are cooperative integrity controls, not protection from a same-user attacker who rewrites code and trace together. Verification defaults to 1800 seconds and requires timeout <= runtime budget.
 
 ---
 
@@ -214,9 +234,9 @@ The runtime package includes:
 
 - `VERSION`, `SKILL.md`, `master-prompt.md`, `sub-prompt.md`, `agents/openai.yaml`
 - `adapters/` — `codex.md`, `claude-code.md`, `universal.md`
-- `references/` — protocol, lanes, Spec Synthesis, proportionality, TDD gates, examples
+- `references/` — protocol, lanes, Spec Synthesis, proportionality, model routing, TDD gates, examples
 - `templates/` — Full and Lite harness templates
-- `scripts/` — `init_run.py`, `harness_test_run.py`, `runtime_state.py`, `validate_workspace.py`,
+- `scripts/` — `init_run.py`, `harness_schema.py`, `harnessctl.py`, `harness_test_run.py`, `model_router.py`, `runtime_state.py`, `validate_workspace.py`,
   `status.py`, `tdd_gate_check.py`, `validate_report.py`, `score_harness.py`, `score_skill_protocol.py`
 
 The authoritative file list is `scripts/package_skill.py:RUNTIME_FILES`.
@@ -415,6 +435,31 @@ Release checklist:
 ---
 
 ## Release History
+
+### v6.3.0
+
+- Added executable cost-aware Codex routing: Luna medium (`fast`), Luna xhigh (`main`), Sol high (`planner`), and Sol xhigh (`critical_reviewer`); Terra is excluded by policy.
+- Added deterministic escalation for high risk, worker conflict, and repeated validation failure.
+- Persisted runtime, profile, requested/resolved model, reasoning effort, route reason, and escalation count in Full dispatch records.
+- Added routing behavior regressions, evaluation cases, runtime capability fields, and packaged routing guidance/tooling.
+
+### v6.2.0
+
+- Added controller-generated typed artifact evidence with SHA-256 and committed transaction receipts; worker/free-form self-report can no longer complete protected PASS.
+- Bound new Full canonical state to initialization and subsequent transaction digests, with an explicit pre-dispatch `seal` for reviewed human-authored state.
+- Added durable `dispatch-create` / `dispatch-update` worker lifecycle records and validation that rejects chat-only running workers after dispatch.
+- Tightened strict spec validation against heading echoes and generic completion words without turning the advisory scorer into a product gate.
+- Added RED/GREEN regression coverage and live dogfood for evidence, state binding, semantic specs, and dispatch persistence.
+
+### v6.1.0
+
+- Unified runtime schema version/status constants and transition rules in `harness_schema.py`.
+- Added `harnessctl.py` for guarded run, task, and acceptance transitions, evidence requirements, artifact locking, and transaction journaling.
+- Added deterministic integrity validation for malformed JSONL, empty acceptance registries, incomplete transactions, terminal cross-file state, and active TDD chronology.
+- Added digest-backed transaction recovery and guarded top-level run transitions with stage rollup.
+- Hardened Markdown validation for numbered Chinese headings, fenced examples, duplicate aliases, empty sections, and placeholders.
+- Removed example RED/GREEN events from the runtime TDD trace template so templates cannot act as fake evidence.
+- Added regression coverage for the new runtime integrity and localization behavior.
 
 ### v6.0.0
 

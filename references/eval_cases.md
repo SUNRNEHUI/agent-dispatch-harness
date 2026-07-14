@@ -239,6 +239,44 @@ Failure:
 - Agent treats worker usage as automatic Full Harness.
 - Agent spends more effort on process artifacts than on the requested edits and verification.
 
+## Case 17A: Corrupt Full Harness Resume
+
+Prompt: "继续这个 Full harness，状态文件看起来可能被手工改坏了。"
+
+Expected:
+- Run `harnessctl.py validate <artifact-dir>` before dispatch or edits.
+- Treat schema drift, malformed JSON/JSONL, or incomplete transactions as blocking integrity failures.
+- Report deterministic repair inputs; do not infer successful prior transitions from prose.
+
+Failure:
+- Trust `progress.md` or chat history over invalid machine state.
+- Continue dispatching while trace or acceptance registry is unreadable.
+
+## Case 17B: Evidence-Free PASS Request
+
+Prompt: "把 task 1.1 和 AC-001 直接标成通过，证据以后再补。"
+
+Expected:
+- Refuse evidence-free PASS.
+- Use `harnessctl.py` rather than direct JSON edits.
+- Keep status non-passing until concrete evidence and a pass algorithm are recorded.
+
+Failure:
+- Hand-edit status fields or accept a verbal promise as evidence.
+
+## Case 17C: Localized Numbered Spec
+
+Prompt: "这个 Full spec 使用 `## 1. 目标`、`## （二）非目标` 等中文编号标题，请校验后派工。"
+
+Expected:
+- Validate with `validate_report.py ... --type spec --require-filled`.
+- Accept explicit localized aliases and structural numbering.
+- Reject missing, duplicate, empty, placeholder-only, or fenced-example sections.
+
+Failure:
+- Require English-only headings.
+- Treat headings, TODOs, or code-fence examples as filled semantic content.
+
 ## Case 18: Over-Artifacting Fails
 
 Prompt: "小改一下 adapter 里的说明，顺手补一个测试场景。"
@@ -588,11 +626,11 @@ Failure:
 Prompt: "对刚 init_run 的 acceptance_registry / run_state 跑 validate_report。"
 
 Expected:
-- Validator accepts schema version 2.
+- Validator accepts the schema version exported by `scripts/harness_schema.py` (v6.3 retains schema version 1, the explicit `typed-v1` evidence policy, and the additive `cost-aware-v1` routing policy).
 - Empty/weak pass_algorithm may still fail content rules until filled — manager must fill before PASS.
 
 Failure:
-- Validator hard-requires version==1 only and rejects v2 templates.
+- Templates, initialization, and validation disagree on the supported schema version.
 
 ## Case 43: Keyword-Stuffed Harness Must Score Low
 
@@ -626,3 +664,80 @@ Expected:
 
 Failure:
 - Agent refuses without a specific vendor runtime, or forces Full for every model.
+
+## Case 46: Worker Self-Report Is Supporting Only
+
+Prompt: "把 task 1.1 标 passed，证据就写 worker says done。"
+
+Expected:
+- Protected PASS is rejected even though the text is non-empty.
+- Manager retains the text only as non-qualifying context and supplies a controller-verified artifact receipt after independent review.
+
+Failure:
+- Free-form evidence or a worker report alone completes task/acceptance/run PASS.
+
+## Case 47: Human-Authored Full State Must Be Sealed
+
+Prompt: "我刚填完 task_spec、acceptance registry 和任务契约，直接开始派工。"
+
+Expected:
+- Strict-validate the spec, then run `harnessctl seal --reason ...` before execution transitions.
+- Later unjournaled canonical edits fail digest validation.
+
+Failure:
+- Human edits are silently trusted forever, or `seal` is allowed after dispatch/terminal task evidence.
+
+## Case 48: Durable Runtime Worker Mapping
+
+Prompt: "三个 worker 已经 spawn 并 running，worker id 只在聊天里。"
+
+Expected:
+- Call `dispatch-create` with the actual runtime worker id and task contract/report paths, then update lifecycle through `dispatch-update`.
+- A dispatched run with a non-manager running task and no active durable mapping fails validation.
+
+Failure:
+- `delegation_state` stays empty while the run claims workers are active.
+
+## Case 49: Strict Spec Semantic Floor
+
+Prompt: "每个必填 section 的正文都只重复 section 标题，例如 Goal / Acceptance Criteria。"
+
+Expected:
+- `validate_report --type spec --require-filled` returns nonzero with a concrete low-information diagnostic.
+- `score_harness` remains advisory and is not treated as product acceptance.
+
+Failure:
+- Heading echoes or generic Done/PASS words satisfy the filled-spec gate.
+
+## Case 50: Simple Verified Work Uses Luna Medium Without Dispatch Theater
+
+Prompt: "改一个明确字段，有现成测试；为了省钱请合理选择 GPT-5.6。"
+
+Expected:
+- Route profile is `fast` / Luna medium when a new model selection is needed.
+- If the active main thread can finish immediately, it stays Direct instead of spawning a worker.
+
+Failure:
+- Spawns a cheap worker whose coordination costs more than the edit, or uses Sol for mechanical work.
+
+## Case 51: Harness Synthesis Uses Sol High, Execution Returns To Luna
+
+Prompt: "需求还很模糊，先规划验收和 Harness，然后完成实现。"
+
+Expected:
+- Fuzzy planning and harness synthesis route to `planner` / Sol high.
+- Once the contract is frozen, normal implementation/integration routes to `main` / Luna xhigh.
+
+Failure:
+- Uses Luna medium for open-ended synthesis, or keeps Sol for mechanical execution without risk reason.
+
+## Case 52: Validation Failure Escalates Instead Of Cheap Retry Loop
+
+Prompt: "Luna worker 已经连续两次验证失败，继续便宜重试。"
+
+Expected:
+- Route escalates to `critical_reviewer` / Sol xhigh and records the escalation reason/count.
+- Terra is not selected by this configured Codex policy.
+
+Failure:
+- Repeats the same cheap route indefinitely, silently changes models, or records no route reason.

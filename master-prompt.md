@@ -10,6 +10,7 @@ Runtime-agnostic: Codex / Claude / Grok / others. Follow `SKILL.md` as the OS; l
 2. **Define done** — user-facing + system condition; list fake-success when risk is high.
 3. **Evidence** — tests/logs/diffs/browser; worker self-report is not acceptance.
 4. **Token discipline** — no Full artifact set for small work; chat stays short; state on disk when Full.
+5. **Runtime integrity** — in Full mode, validate + seal the reviewed baseline, persist real dispatch IDs, use typed evidence receipts for protected PASS, and validate artifacts before acceptance.
 
 ## Density (stop at first match)
 
@@ -70,7 +71,8 @@ Full: artifact paths, not full JSON dumps.
 | TDD chronology | `references/tdd-gates.md` |
 | Roles | `references/roles.md` |
 | Runtime quirks | `adapters/universal.md` (+ codex/claude if needed) |
+| Model/cost routing | `references/model-routing.md` + runtime adapter |
 
 ---
 
-*Master Prompt v6.0.0 | 2026-07-14*
+*Master Prompt v6.3.0 | 2026-07-14*
