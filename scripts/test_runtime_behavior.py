@@ -222,7 +222,8 @@ def test_full_task_schema_has_runtime_and_workspace_binding() -> None:
 def test_workspace_binding_validator_accepts_and_rejects() -> None:
     temp = Path(tempfile.mkdtemp(prefix="adh-test-binding-"))
     try:
-        task = {"required_cwd": str(ROOT), "repository_root": str(ROOT), "required_branch": "codex/native-runtime-alignment"}
+        branch = run(["git", "-C", str(ROOT), "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+        task = {"required_cwd": str(ROOT), "repository_root": str(ROOT), "required_branch": branch}
         task_path = temp / "task.json"
         write_json(task_path, task)
         ok = run(["python3", "scripts/validate_workspace.py", str(task_path), "--cwd", str(ROOT)], check=False)

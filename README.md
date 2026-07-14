@@ -2,66 +2,79 @@
 
 [简体中文](README.zh-CN.md) | English
 
-Agent Dispatch Harness, formerly Multi-Agent Dispatcher, is an agent skill for routing explicit multi-agent requests into the smallest execution mode that can complete the work reliably. It avoids unnecessary delegation for small tasks and provides a durable harness for long, risky, resumable, evidence-verified work.
+Agent Dispatch Harness (formerly Multi-Agent Dispatcher) is a **runtime-agnostic task OS** for coding agents. It helps any model (Codex, Claude Code, Grok, and similar) choose the lightest process that still makes false completion hard: from one-shot Direct fixes to durable Full harness runs with evidence gates.
 
-Current version: **v5.9.0** · 2026-07-09
+Current version: **v6.0.0** · 2026-07-14
 
 ---
 
 ## Overview
 
-Multi-agent execution is useful only when the work has clear independent ownership boundaries or requires durable coordination. This skill separates authorization from execution: a user may request multi-agent work, but the manager agent still decides whether delegation improves the result.
+This skill is not “always multi-agent” and not “always write a big harness”. It is a proportional execution methodology:
+
+```text
+User intent → density decision → (optional) Spec Synthesis → execute → evidence → done
+```
+
+Multi-agent wording authorizes evaluation of dispatch. It does not force workers. Fuzzy goals should be compiled into success / fake-success / accept rules before implementation. Long, risky, or resumable work can use durable Full harness artifacts.
 
 The manager remains responsible for:
 
-- selecting the execution mode
-- defining scope, non-goals, ownership, and verification requirements
-- assigning bounded work to sub-agents when delegation is justified
+- density / mode selection (Direct, Lite, Full)
+- Spec Synthesis when success is underspecified
+- scope, non-goals, ownership, and verification requirements
+- assigning bounded work to sub-agents only when ownership is clean
 - merging results and resolving conflicts
-- verifying acceptance evidence before claiming completion
+- re-checking critical evidence before claiming completion
 
-Sub-agents are used only for bounded execution, investigation, review, or evaluation tasks. They do not replace the manager's responsibility for final acceptance.
+Sub-agents execute bounded slices only. They never own final acceptance.
 
 ---
 
 ## Core Capabilities
 
-- **Mode selection:** choose Direct, Lite, or Full execution before creating workers or artifacts.
-- **Selective delegation:** dispatch sub-agents only when the task has clean ownership boundaries.
-- **Durable state:** preserve task state for long or resumable work under a project workspace directory.
-- **Runtime TDD evidence:** distinguish strict TDD, test-first evidence, substitute verification, and non-applicable work with wrapper-generated trace and optional filesystem mtime checks.
-- **Evidence-based acceptance:** require tests, build output, logs, browser checks, screenshots, CI, readback, or evaluator reports before completion.
-- **Runtime adapters:** map the same protocol to Codex, Claude Code, or similar coding-agent environments.
-- **Clean packaging:** generate a runtime-only install package without repository docs, local caches, generated workspaces, or private configuration.
+- **Density decision:** stop at the lightest mode that controls false completion (Direct → synthesis → Lite → Full).
+- **Spec Synthesis:** compile fuzzy or improvement-shaped goals into executable contracts before coding.
+- **Selective delegation:** spawn workers only with clean ownership and real coordination benefit.
+- **Durable Full harness:** `run_state`, acceptance registry, traces, and task contracts under `workspace/<slug>/`.
+- **Runtime TDD evidence:** strict TDD, test-first evidence, substitute verification, and non-applicable gates with wrapper-generated traces.
+- **Evidence-based acceptance:** tests, builds, logs, browser checks, screenshots, CI, or evaluator reports — never self-report alone.
+- **Plan quality scoring (optional):** `scripts/score_harness.py` rates harness completeness; it is never product acceptance.
+- **Runtime adapters:** Codex, Claude Code, and a universal adapter for other agents.
+- **Clean packaging:** runtime-only install package without docs, caches, or private configuration.
 
 ---
 
 ## Execution Modes
 
-| Mode | Use When | Behavior |
-| --- | --- | --- |
-| **Direct** | The task is small, local, sequential, or cheaper for one agent to complete. | No sub-agents and no orchestration artifacts. The manager executes and verifies directly. |
-| **Lite** | The task has a few separable slices, but does not need a durable harness. | The manager uses a short plan, bounded ownership, compact reports, and targeted verification. |
-| **Full** | The task is long, risky, resumable, parallel, evaluator-heavy, or benefits from worktree isolation. | The manager runs the full harness with capability records, state files, acceptance registry, trace, reports, and verification gates. |
+| Mode | Use When | Write on disk? | Behavior |
+| --- | --- | --- | --- |
+| **Direct** | Tiny, clear, low fake-success risk (typo, one file, obvious fix). | No | Manager implements and verifies. No harness files. |
+| **Direct+** | Clear 2–5 step work with one owner. | Chat-only plan optional | Still no Full `workspace/` tree. |
+| **Lite** | Medium work with clean parallel ownership. | Short plan / compact reports | Bounded workers; no full registry by default. |
+| **Full** | Long, risky, resumable, multi-session, evaluator-heavy, or worktree isolation. | `workspace/<slug>/` | Durable state, acceptance registry, traces, TDD gates. |
 
-Explicit multi-agent wording authorizes mode selection. It does not automatically require multiple workers.
+**Spec Synthesis** is not a fourth mode: it runs first when the goal is fuzzy, improvement-shaped, or easy to fake-complete. Compact synthesis lives in chat or a short note; Full synthesis seeds stage `0.1` via `init_run.py --with-synthesis`.
+
+Hard rules:
+
+- Multi-agent words ≠ must dispatch.
+- Single owner + medium steps → Direct+ (chat plan), not Lite theater.
+- Fuzzy goal ≠ Full harness by default.
+- Improvement-shaped work needs a terminal metric and baseline plan before “optimize”.
 
 ---
 
 ## When To Use
 
-Use this skill when the user explicitly asks for:
+Prefer this skill when the task involves:
 
-- multi-agent work
-- sub-agents
-- delegated agent work
-- parallel agents
-- DAG scheduling
-- worktree-based parallel execution
-- 分头处理 / 分别派 / 拆给不同 agent
-- resumable or evidence-verified long-running coordination
+- multi-agent / sub-agents / DAG / worktree / 分头处理
+- fuzzy goals that need Spec Synthesis (“faster”, “better”, “more professional”)
+- long, resumable, evidence-verified coordination
+- deciding how much process to apply without wasting tokens
 
-Do not use this skill only because a task is large. If the user has not authorized multi-agent execution, continue with the normal single-agent workflow or briefly propose multi-agent coordination when it would materially reduce risk.
+Do not force Full harness or workers for small clear work. If multi-agent is not authorized and not useful, stay single-agent.
 
 ---
 
@@ -69,15 +82,15 @@ Do not use this skill only because a task is large. If the user has not authoriz
 
 ```text
 Context Intake
--> Mode Selection: Direct / Lite / Full
--> Execute Selected Mode
+-> Density decision: Direct / synthesis / Lite / Full
+-> Optional Spec Synthesis (success, fake-success, accept rules)
+-> Execute selected mode
    Direct: implement, verify, report
    Lite: coordinate bounded slices, verify, report
-   Full: run capability gate, acceptance registry, state machine, trace, evaluator
+   Full: capability, artifacts, DAG, workers, TDD gates, evaluator
+-> Manager re-verify critical evidence
 -> Merge / Handoff
 ```
-
-The manager should always choose the lightest mode that preserves quality and verification.
 
 ---
 
@@ -199,25 +212,14 @@ This avoids duplicate skill entries that describe the same workflow.
 
 The runtime package includes:
 
-- `VERSION`
-- `SKILL.md`
-- `master-prompt.md`
-- `sub-prompt.md`
-- `agents/openai.yaml`
-- `adapters/`
-- `references/`
-  - `references/state-memory-boundary.md`
-- `templates/`
-- `scripts/init_run.py`
-- `scripts/harness_test_run.py`
-- `scripts/status.py`
-- `scripts/tdd_gate_check.py`
-- `scripts/validate_report.py`
-- `templates/lite_plan.md`
-- `templates/lite_review.md`
-- `templates/tdd_trace.jsonl`
+- `VERSION`, `SKILL.md`, `master-prompt.md`, `sub-prompt.md`, `agents/openai.yaml`
+- `adapters/` — `codex.md`, `claude-code.md`, `universal.md`
+- `references/` — protocol, lanes, Spec Synthesis, proportionality, TDD gates, examples
+- `templates/` — Full and Lite harness templates
+- `scripts/` — `init_run.py`, `harness_test_run.py`, `runtime_state.py`, `validate_workspace.py`,
+  `status.py`, `tdd_gate_check.py`, `validate_report.py`, `score_harness.py`, `score_skill_protocol.py`
 
-The authoritative file list is `scripts/package_skill.py:RUNTIME_FILES`; this section summarizes the runtime categories.
+The authoritative file list is `scripts/package_skill.py:RUNTIME_FILES`.
 
 It intentionally excludes:
 
@@ -382,7 +384,55 @@ Mode selection always runs first. Supporting methods are applied only when they 
 
 ---
 
+## Version management
+
+Single source of truth:
+
+```bash
+# VERSION file holds MAJOR.MINOR.PATCH (no leading v)
+cat VERSION
+
+# Rewrite README / SKILL current-version lines from VERSION
+python3 scripts/sync_version.py --fix --date 2026-07-14
+
+# Verify only
+python3 scripts/sync_version.py
+
+# Package and check install
+python3 scripts/package_skill.py --verify-source
+python3 scripts/package_skill.py --output /tmp/agent-dispatch-harness-runtime --force
+python3 scripts/package_skill.py --check /tmp/agent-dispatch-harness-runtime
+```
+
+Release checklist:
+
+1. Bump `VERSION`.
+2. Run `sync_version.py --fix --date <YYYY-MM-DD>`.
+3. Update bilingual release notes in this README and `README.zh-CN.md`.
+4. Run `python3 scripts/test_runtime_behavior.py` and `python3 scripts/score_skill_protocol.py` (if available).
+5. Commit on a `release/vX.Y.Z` branch, open PR or merge to `main`, tag `vX.Y.Z`, publish GitHub Release.
+
+---
+
 ## Release History
+
+### v6.0.0
+
+- Repositioned the skill as a **universal task OS**: proportional density (Direct / Lite / Full), not multi-agent-first.
+- Added **Spec Synthesis** for fuzzy and improvement-shaped goals (`references/spec-synthesis.md`, `init_run.py --with-synthesis`).
+- Added proportionality and progressive-load guidance (`references/proportionality.md`, shorter `SKILL.md` / prompts).
+- Added universal runtime adapter and optional harness quality scoring (`adapters/universal.md`, `scripts/score_harness.py`, `scripts/score_skill_protocol.py`).
+- Hardened acceptance language: manager re-verify required; `score_harness` is never product PASS.
+- Preserved mainline runtime safety: cooperative manager state/trace API, atomic JSON, locked JSONL, timeout budgets, workspace binding checks.
+- Public README rewritten for the v6 positioning; version management documented.
+
+### v5.11.0
+
+- Streamlined orchestration and added a stricter completion confidence gate (tagged release; see GitHub Releases).
+
+### v5.10.0
+
+- GPT-5.6-aware dispatch routing notes (tagged release; see GitHub Releases).
 
 ### v5.9.0
 

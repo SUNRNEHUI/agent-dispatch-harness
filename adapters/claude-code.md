@@ -1,6 +1,6 @@
 # Claude Code Runtime Adapter
 
-This adapter maps the v5 harness protocol onto Claude Code or similar code-harness environments. It focuses on practical control points: local instructions, tools, sandboxing, subagents, hooks, worktrees, and acceptance evidence.
+This adapter maps the harness protocol onto Claude Code or similar environments. Prefer `SKILL.md` v5.8+ density rules and `adapters/universal.md` first; this file is Claude-specific control points only.
 
 ## Persistent Instructions
 

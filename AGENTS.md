@@ -4,14 +4,14 @@
 
 ## 项目定位
 
-本仓库维护一个 Codex/Claude Code 可用的多智能体调度 skill。项目目标是提供一个轻量但可审计的 dispatch harness，而不是把每个任务都变成复杂编排。
+本仓库维护一个跨模型可用的 **任务执行 OS / agent skill**（Codex、Claude Code、Grok 等）。目标是按风险选择最轻执行密度，而不是把每个任务都变成多智能体编排。
 
 核心原则：
 
-- 用户授权多智能体后，主 agent 仍必须先判断是否需要调度。
-- 默认选择能可靠完成任务的最轻模式：Direct、Lite、Full。
-- Full Harness 只用于长任务、高风险任务、可续跑任务、需要 evaluator 或需要证据化验收的任务。
-- TDD、review gates、worktree isolation、verification before completion 是工程方法，不应替代本项目的 mode router。
+- 密度优先：Direct → Spec Synthesis → Lite → Full；口头「多 agent」不等于必须派工。
+- 模糊目标先 Spec Synthesis（成功条件 / 假完成 / 验收规则），再写代码。
+- Full Harness 只用于长任务、高风险、可续跑、需要 evaluator 或证据化验收的工作。
+- 只接受外部证据；`score_harness` 高分不等于产品完成。
 - State 和 Memory 必须分离。单次 run artifact 只保存本次任务状态和审计日志，跨任务经验只能作为 memory candidate，不能自动晋升。
 
 ## 主要文件

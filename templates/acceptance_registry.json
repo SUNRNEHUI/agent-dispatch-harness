@@ -1,19 +1,23 @@
 {
-  "version": 1,
+  "version": 2,
   "created_at": "",
+  "updated_at": "",
   "title": "",
   "tdd_trace_path": "tdd_trace.jsonl",
+  "completion_rule": "Every required criterion must be pass, the final evaluator must be PASS when used, and no task may remain blocked or verify_failed.",
   "criteria": [
     {
       "id": "AC-001",
       "description": "",
+      "success_criteria": [],
       "status": "pending",
       "required_evidence": [],
+      "pass_algorithm": "",
       "evidence": [],
-      "owner": "main-agent",
+      "owner": "manager",
       "verification_gate": {
         "mode": "not_applicable",
-        "tdd_trace_path": "",
+        "tdd_trace_path": "tdd_trace.jsonl",
         "red_command": "",
         "red_result": "",
         "red_failure_reason": "",

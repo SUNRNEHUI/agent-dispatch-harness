@@ -2,82 +2,95 @@
 
 简体中文 | [English](README.md)
 
-Agent Dispatch Harness，原名 Multi-Agent Dispatcher，是面向 AI 编码代理的 skill，用于把明确的多智能体请求路由到最合适的执行模式。它避免小任务过度调度，并为长任务、高风险任务、可续跑任务和需要证据验收的任务提供持久化 harness。
+Agent Dispatch Harness（原名 Multi-Agent Dispatcher）是一套**跨模型任务执行 OS**。它帮助 Codex / Claude Code / Grok 等编码代理按风险选择最轻流程：从单次 Direct 修复，到带证据门槛的 Full harness 长任务，而不是“永远多智能体”或“永远写大 harness”。
 
-当前版本：**v5.9.0** · 2026-07-09
+当前版本：**v6.0.0** · 2026-07-14
 
 ---
 
 ## 概览
 
-多智能体执行只在任务存在清晰的独立责任边界，或需要持久化协同时才有明显价值。本 skill 将“用户授权多智能体”与“实际启动多智能体”分开处理：用户可以请求多智能体工作，但主代理仍需要判断调度是否真的能提升结果质量。
+本 skill 强调比例化执行：
+
+```text
+用户意图 → 密度判断 →（可选）Spec Synthesis → 执行 → 证据 → 完成
+```
+
+口头“多 agent”只代表可以评估是否派工，不等于必须派工。模糊目标应先编译成成功条件 / 假完成 / 验收规则，再写代码。长、高风险、可续跑的工作才使用持久化 Full harness。
 
 主代理始终负责：
 
-- 选择执行模式
-- 定义目标、非目标、责任边界和验证要求
-- 在有必要时把边界清晰的任务分配给子代理
-- 合并结果并处理冲突
-- 在声明完成前验证验收证据
+- 密度 / 模式选择（Direct、Lite、Full）
+- 目标含糊时的 Spec Synthesis
+- 目标、非目标、责任边界和验证要求
+- 仅在责任边界清晰时启动子代理
+- 合并结果与冲突处理
+- 在宣布完成前**亲自复核**关键证据
 
-子代理只负责边界明确的执行、调研、审查或评估任务。最终验收责任仍由主代理承担。
+子代理只执行有边界的切片，不拥有最终验收权。
 
 ---
 
 ## 核心能力
 
-- **模式选择：** 在创建 worker 或 artifact 之前，先选择 Direct、Lite 或 Full。
-- **选择性调度：** 只有在任务具备清晰责任边界时才分配子代理。
-- **持久化状态：** 为长任务或可续跑任务保存 spec、进度、报告、状态和验收记录。
-- **运行时 TDD 证据：** 用 wrapper-generated trace 和可选文件系统 mtime 校验区分 strict TDD、test-first evidence、substitute verification 和 not applicable。
-- **证据化验收：** 用测试、构建输出、日志、浏览器检查、截图、CI、readback 或 evaluator 报告支持完成结论。
-- **运行时适配：** 将同一套协议映射到 Codex、Claude Code 或类似编码代理环境。
-- **干净打包：** 生成 runtime-only 安装包，避免把仓库文档、本地缓存、生成工作区或私有配置复制到运行目录。
+- **密度判断：** 在能抑制假完成的前提下选最轻模式（Direct → synthesis → Lite → Full）。
+- **Spec Synthesis：** 把模糊或“更快/更好”类目标编译成可执行合同。
+- **选择性调度：** 仅在 ownership 干净且协调成本低于收益时派工。
+- **Full harness 持久化：** `run_state`、验收清单、trace、任务合同位于 `workspace/<slug>/`。
+- **运行时 TDD 证据：** strict TDD / test-first / substitute / not_applicable，配合 wrapper 生成的 trace。
+- **证据化验收：** 测试、构建、日志、浏览器、截图、CI 或 evaluator；禁止仅靠自评。
+- **计划质量评分（可选）：** `score_harness.py` 只评 harness 完整度，**不是**产品 PASS。
+- **运行时适配：** Codex、Claude Code、universal。
+- **干净打包：** runtime-only 安装包，不含文档、缓存或私有配置。
 
 ---
 
 ## 执行模式
 
-| 模式 | 适用场景 | 行为 |
-| --- | --- | --- |
-| **Direct** | 任务较小、局部、顺序性强，或一个代理可以更高效完成。 | 不启动子代理，不创建编排 artifact。主代理直接执行并验证。 |
-| **Lite** | 任务有少量可拆分部分，但不需要完整持久化 harness。 | 主代理使用简短计划、明确 owner、紧凑报告和针对性验证。 |
-| **Full** | 任务较长、高风险、可续跑、需要并行、需要 evaluator，或适合 worktree 隔离。 | 主代理运行完整 harness，包括 capability 记录、状态文件、验收清单、trace、报告和验证 gate。 |
+| 模式 | 适用场景 | 是否写盘 | 行为 |
+| --- | --- | --- | --- |
+| **Direct** | 小、清楚、假完成风险低 | 否 | 主代理直接实现并验证 |
+| **Direct+** | 清晰的 2–5 步、单一 owner | 仅可选聊天计划 | 不写 Full `workspace/` |
+| **Lite** | 中等任务、可并行且 ownership 干净 | 短计划 / 紧凑报告 | 有限 worker；默认无完整 registry |
+| **Full** | 长任务、高风险、可续跑、需 evaluator / worktree | `workspace/<slug>/` | 完整状态、验收、trace、TDD gate |
 
-明确的多智能体请求代表授权进行模式选择，不代表必须启动多个 worker。
+**Spec Synthesis** 不是第四种模式：目标含糊、改进型或易假完成时先编译。紧凑版在聊天或短笔记中完成；Full 版用 `init_run.py --with-synthesis` 生成 stage `0.1`。
+
+硬规则：
+
+- 多 agent 用词 ≠ 必须派工
+- 单 owner 中等步骤 → Direct+，不要 Lite 演戏
+- 模糊目标默认不等于 Full harness
+- 改进型任务先定义终点指标与基线，再“优化”
 
 ---
 
 ## 适用场景
 
-当用户明确要求以下能力时使用本 skill：
+适合在以下情况优先加载本 skill：
 
-- 多智能体 / 多 Agent
-- sub-agent / 子 agent
-- 代理委托
-- 并行 agent
-- DAG 调度
-- 基于 worktree 的并行执行
-- 分头处理 / 分别派 / 拆给不同 agent
-- 需要可续跑或证据验收的长任务协同
+- 多智能体 / 子代理 / DAG / worktree / 分头处理
+- 需要 Spec Synthesis 的模糊目标（“更快”“更好”“更专业”）
+- 可续跑、需证据验收的长协调
+- 需要判断流程该厚还是该薄，避免烧 token
 
-不要仅仅因为任务较大就使用本 skill。如果用户没有授权多智能体执行，应继续使用普通单代理工作流；当多智能体确实能降低风险时，可以简要提出建议。
+小而清楚的任务不要强行 Full 或派工。未授权且无收益时保持单代理。
 
 ---
 
 ## 运行流程
 
 ```text
-Context Intake
--> Mode Selection: Direct / Lite / Full
--> Execute Selected Mode
-   Direct: 实现、验证、汇报
-   Lite: 协调边界清晰的任务片段、验证、汇报
-   Full: capability gate、acceptance registry、state machine、trace、evaluator
--> Merge / Handoff
+上下文接入
+-> 密度判断：Direct / synthesis / Lite / Full
+-> 可选 Spec Synthesis（成功、假完成、验收规则）
+-> 执行选定模式
+   Direct：实现、验证、汇报
+   Lite：协调有边界的切片、验证、汇报
+   Full：capability、artifact、DAG、worker、TDD gate、evaluator
+-> 主代理复核关键证据
+-> 合并 / 交接
 ```
-
-主代理应始终选择能够保证质量和验证的最轻模式。
 
 ---
 
@@ -197,25 +210,14 @@ rm -rf ~/.codex/skills/multi-agent-dispatcher ~/.codex/skills/multi-agent-orches
 
 runtime 包包含：
 
-- `VERSION`
-- `SKILL.md`
-- `master-prompt.md`
-- `sub-prompt.md`
-- `agents/openai.yaml`
-- `adapters/`
-- `references/`
-  - `references/state-memory-boundary.md`
-- `templates/`
-- `scripts/init_run.py`
-- `scripts/harness_test_run.py`
-- `scripts/status.py`
-- `scripts/tdd_gate_check.py`
-- `scripts/validate_report.py`
-- `templates/lite_plan.md`
-- `templates/lite_review.md`
-- `templates/tdd_trace.jsonl`
+- `VERSION`、`SKILL.md`、`master-prompt.md`、`sub-prompt.md`、`agents/openai.yaml`
+- `adapters/` — `codex.md`、`claude-code.md`、`universal.md`
+- `references/` — 协议、lane、Spec Synthesis、proportionality、TDD gates、示例
+- `templates/` — Full / Lite harness 模板
+- `scripts/` — `init_run.py`、`harness_test_run.py`、`runtime_state.py`、`validate_workspace.py`、
+  `status.py`、`tdd_gate_check.py`、`validate_report.py`、`score_harness.py`、`score_skill_protocol.py`
 
-权威文件清单以 `scripts/package_skill.py:RUNTIME_FILES` 为准；本节只概括 runtime 类别。
+权威文件清单以 `scripts/package_skill.py:RUNTIME_FILES` 为准。
 
 runtime 包会排除：
 
@@ -380,7 +382,41 @@ Superpowers-style methods = 可选的工程支持方法
 
 ---
 
+## 版本管理
+
+单一来源：
+
+```bash
+cat VERSION
+python3 scripts/sync_version.py --fix --date 2026-07-14
+python3 scripts/sync_version.py
+python3 scripts/package_skill.py --verify-source
+python3 scripts/test_runtime_behavior.py
+```
+
+发布清单：更新 `VERSION` → `sync_version.py --fix` → 同步中英文 Release History → 跑测试 → `release/vX.Y.Z` 分支提交 → 合入 main → 打 `vX.Y.Z` tag → GitHub Release。
+
+---
+
 ## 版本历史
+
+### v6.0.0
+
+- 重新定位为**通用任务 OS**：按密度选 Direct / Lite / Full，而非多智能体优先。
+- 新增 **Spec Synthesis**（`references/spec-synthesis.md`，`init_run.py --with-synthesis`）。
+- 新增 proportionality 与渐进加载（`references/proportionality.md`，缩短 `SKILL.md` / prompts）。
+- 新增 universal adapter 与可选 harness 评分（`adapters/universal.md`，`score_harness.py`，`score_skill_protocol.py`）。
+- 强化验收语言：主代理必须复核关键证据；`score_harness` 高分 ≠ 产品完成。
+- 保留 mainline 运行时安全：manager state/trace API、原子 JSON、锁定 JSONL、timeout 预算、workspace 绑定校验。
+- 重写公开 README，并文档化版本管理。
+
+### v5.11.0
+
+- 精简编排并加强完成置信度门槛（见 GitHub Releases 标签说明）。
+
+### v5.10.0
+
+- GPT-5.6 相关路由说明（见 GitHub Releases 标签说明）。
 
 ### v5.9.0
 
