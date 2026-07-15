@@ -8,6 +8,15 @@
 | --- | --- | --- | --- |
 |  |  |  |  |
 
+## Production State Witness
+
+- Required for this task: yes / no
+- Witness path or compact matrix:
+- Failing state row:
+- Preserved blocking row:
+- Required verification tier:
+- Adversarial review handoff:
+
 ## Merge Plan
 
 ## Verification Evidence

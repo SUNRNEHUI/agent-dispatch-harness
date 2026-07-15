@@ -1,12 +1,24 @@
 {
   "version": 1,
+  "evidence_policy": "typed-v1",
+  "routing_policy": "cost-aware-v1",
   "created_at": "",
   "updated_at": "",
   "title": "",
-  "mode": "full",
   "artifact_dir": "",
   "trace_path": "trace.jsonl",
   "tdd_trace_path": "tdd_trace.jsonl",
+  "state_witness": {
+    "required": false,
+    "path": "",
+    "required_tier": "policy",
+    "observed_tier": "",
+    "review_status": "not_required",
+    "reviewer_id": "",
+    "review_evidence": [],
+    "sealed_digest": "",
+    "reviewed_at": ""
+  },
   "tdd_current_cycle_context": {
     "task_id": "",
     "gate_mode": "",
@@ -22,9 +34,26 @@
     "updated_at": ""
   },
   "status": "intake",
+  "current_stage": "0",
+  "synthesis": {
+    "status": "not_started",
+    "fuzzy_goal": false,
+    "alignment_packet_path": "",
+    "checklist": {
+      "rewritten_goal": false,
+      "fake_success_list": false,
+      "constraints_nongoals": false,
+      "pass_algorithms": false,
+      "risk_ordered_phases": false,
+      "first_ready_task": false,
+      "stop_conditions": false
+    },
+    "recommended_defaults": [],
+    "open_questions": []
+  },
   "state_layers": {
     "working_state": {
-      "current_stage": "1",
+      "current_stage": "0",
       "current_task": "",
       "active_blockers": [],
       "volatile_notes": [],
@@ -40,7 +69,14 @@
         "trace": "trace.jsonl",
         "tdd_trace": "tdd_trace.jsonl"
       },
-      "delegation_state": []
+      "delegation_state": [],
+      "document_priority": [
+        "task_spec.md",
+        "acceptance_registry.json",
+        "run_state.json",
+        "tasks/*",
+        "review prose"
+      ]
     },
     "execution_log": {
       "trace_path": "trace.jsonl",
@@ -53,42 +89,33 @@
       "promotion_required": "user_approval_or_project_doc_update"
     }
   },
-  "current_stage": "1",
   "stages": [
     {
-      "id": "1",
-      "name": "initial execution",
+      "id": "0",
+      "name": "spec-synthesis-or-measurement",
       "status": "planned",
       "tasks": [],
       "budget": "",
-      "resource_budget": {
-        "token_budget": null,
-        "tokens_used": null,
-        "tokens_remaining": null,
-        "usage_kind": "unknown",
-        "accounting_note": "Token counters unavailable; do not infer tokens from characters.",
-        "exhaustion_action": "stop_and_record_decision"
-      },
       "evidence": [],
       "stop_reason": ""
     }
   ],
   "tasks": [],
   "task_shape": {
-    "id": "1.1",
+    "id": "0.1",
     "name": "",
-    "stage": 1,
+    "stage": 0,
     "status": "planned",
     "owner": "",
     "allowed_scope": [],
-    "task_path": "tasks/1.1-example.md",
-    "report_path": "1.1-example-report.md",
+    "task_path": "tasks/0.1-example.md",
+    "report_path": "reports/0.1-example.md",
     "dependencies": [],
     "expected_outputs": [],
     "verification": [],
     "verification_gate": {
       "mode": "not_applicable",
-      "tdd_trace_path": "",
+      "tdd_trace_path": "tdd_trace.jsonl",
       "red_command": "",
       "red_result": "",
       "red_failure_reason": "",
@@ -100,14 +127,6 @@
     },
     "retry_count": 0,
     "budget": "",
-    "resource_budget": {
-      "token_budget": null,
-      "tokens_used": null,
-      "tokens_remaining": null,
-      "usage_kind": "unknown",
-      "accounting_note": "Token counters unavailable; do not infer tokens from characters.",
-      "exhaustion_action": "stop_and_record_decision"
-    },
     "evidence": [],
     "stop_reason": ""
   },

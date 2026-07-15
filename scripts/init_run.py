@@ -4,11 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
 from pathlib import Path
 from datetime import datetime, timezone
+
+from harness_schema import EVIDENCE_POLICY, MODEL_ROUTING_POLICY, SCHEMA_VERSION, VERIFICATION_TIERS
 
 
 TEMPLATE_MAP = {
@@ -97,18 +100,21 @@ def default_tdd_cycle_context() -> dict[str, object]:
     }
 
 
-def default_resource_budget() -> dict[str, object]:
+def default_state_witness(required: bool, tier: str) -> dict[str, object]:
     return {
-        "token_budget": None,
-        "tokens_used": None,
-        "tokens_remaining": None,
-        "usage_kind": "unknown",
-        "accounting_note": "Token counters unavailable; do not infer tokens from characters.",
-        "exhaustion_action": "stop_and_record_decision",
+        "required": required,
+        "path": "state_witness.md" if required else "",
+        "required_tier": tier if required else "policy",
+        "observed_tier": "",
+        "review_status": "pending" if required else "not_required",
+        "reviewer_id": "",
+        "review_evidence": [],
+        "sealed_digest": "",
+        "reviewed_at": "",
     }
 
 
-def default_state_layers(mode: str = "full") -> dict[str, object]:
+def default_state_layers(mode: str = "full", state_witness_required: bool = False) -> dict[str, object]:
     if mode == "lite":
         return {
             "working_state": {
@@ -124,6 +130,16 @@ def default_state_layers(mode: str = "full") -> dict[str, object]:
             },
         }
 
+    artifact_paths = {
+        "task_spec": "task_spec.md",
+        "progress": "progress.md",
+        "acceptance_registry": "acceptance_registry.json",
+        "trace": "trace.jsonl",
+        "tdd_trace": "tdd_trace.jsonl",
+    }
+    if state_witness_required:
+        artifact_paths["state_witness"] = "state_witness.md"
+
     return {
         "working_state": {
             "current_stage": "1",
@@ -135,13 +151,7 @@ def default_state_layers(mode: str = "full") -> dict[str, object]:
         "session_state": {
             "shared_decisions": [],
             "shared_assumptions": [],
-            "artifact_paths": {
-                "task_spec": "task_spec.md",
-                "progress": "progress.md",
-                "acceptance_registry": "acceptance_registry.json",
-                "trace": "trace.jsonl",
-                "tdd_trace": "tdd_trace.jsonl",
-            },
+            "artifact_paths": artifact_paths,
             "delegation_state": [],
         },
         "execution_log": {
@@ -164,12 +174,31 @@ def main() -> int:
     parser.add_argument("--title", default="multi-agent-task", help="Human-readable task title.")
     parser.add_argument("--agents", default="", help="Comma-separated agent task names, e.g. frontend,backend,tests.")
     parser.add_argument("--mode", choices=("direct", "lite", "full"), default="full", help="Artifact mode to initialize.")
+    parser.add_argument(
+        "--with-synthesis",
+        action="store_true",
+        help="Seed Spec Synthesis checklist, stage 0.1 task, and ALIGNMENT.md (full mode only).",
+    )
+    parser.add_argument(
+        "--with-state-witness",
+        action="store_true",
+        help="Require a Production State Witness before dispatch and protected acceptance.",
+    )
+    parser.add_argument(
+        "--required-verification-tier",
+        choices=VERIFICATION_TIERS,
+        default="flow",
+        help="Minimum evidence tier required for a stateful run.",
+    )
     parser.add_argument("--force", action="store_true", help="Overwrite existing generated files.")
     args = parser.parse_args()
 
     if args.mode == "direct":
         print("Direct mode does not need orchestration artifacts.")
         return 0
+
+    if args.with_synthesis and args.mode != "full":
+        raise SystemExit("--with-synthesis is only valid with --mode full")
 
     project_root = Path(args.project_root).resolve()
     slug = slugify(args.slug or args.title)
@@ -179,7 +208,9 @@ def main() -> int:
     created = []
     skipped = []
 
-    template_map = LITE_TEMPLATE_MAP if args.mode == "lite" else TEMPLATE_MAP
+    template_map = dict(LITE_TEMPLATE_MAP if args.mode == "lite" else TEMPLATE_MAP)
+    if args.with_state_witness:
+        template_map["state_witness.md"] = "state_witness.md"
     for template_name, output_name in template_map.items():
         output_path = artifact_dir / output_name
         if copy_template(template_dir, template_name, output_path, args.force):
@@ -188,6 +219,80 @@ def main() -> int:
             skipped.append(output_path)
 
     agents = [slugify(item) for item in args.agents.split(",") if item.strip()]
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    task_items: list[dict[str, object]] = []
+    stage_items: list[dict[str, object]] = []
+
+    if args.mode == "full" and args.with_synthesis:
+        synth_task_path = artifact_dir / "tasks" / "0.1-spec-synthesis.md"
+        synth_body = (
+            "# Task 0.1: Spec Synthesis\n\n"
+            "## Goal\n\n"
+            "Compile fuzzy intent into rewritten success, fake-success list, constraints,\n"
+            "pass_algorithm acceptance, risk-ordered phases, and ALIGNMENT packet.\n\n"
+            "## Dependencies\n\n"
+            "None.\n\n"
+            "## Allowed Scope\n\n"
+            "- task_spec.md\n"
+            "- ALIGNMENT.md\n"
+            "- acceptance_registry.json\n"
+            "- run_state.json synthesis fields\n"
+            "- tasks/* contracts for later stages (define only)\n\n"
+            "## Testing Gate / Verification\n\n"
+            "- Gate mode: not_applicable (planning)\n"
+            "- Substitute: score_harness.py on this artifact dir after fill\n\n"
+            "## PASS\n\n"
+            "Synthesis checklist all true or waived with recorded override;\n"
+            "acceptance items have pass_algorithm or TBD+measurement; first ready task is narrow.\n\n"
+            "## Stop\n\n"
+            "Cannot define terminal success without user decision on open questions.\n"
+        )
+        if write_text(synth_task_path, synth_body, args.force):
+            created.append(synth_task_path)
+        else:
+            skipped.append(synth_task_path)
+        task_items.append(
+            {
+                "id": "0.1",
+                "name": "spec-synthesis",
+                "stage": 0,
+                "status": "ready",
+                "owner": "manager",
+                "allowed_scope": [
+                    "task_spec.md",
+                    "ALIGNMENT.md",
+                    "acceptance_registry.json",
+                    "run_state.json",
+                    "tasks/*",
+                ],
+                "task_path": "tasks/0.1-spec-synthesis.md",
+                "report_path": "reports/0.1-spec-synthesis.md",
+                "dependencies": [],
+                "expected_outputs": ["ALIGNMENT.md", "filled task_spec", "pass_algorithm criteria"],
+                "verification": ["score_harness optional", "checklist complete"],
+                "verification_gate": default_verification_gate(),
+                "retry_count": 0,
+                "budget": "",
+                "runtime_budget_seconds": 1800,
+                "required_cwd": "",
+                "repository_root": "",
+                "required_branch": "",
+                "evidence": [],
+                "stop_reason": "",
+            }
+        )
+        stage_items.append(
+            {
+                "id": "0",
+                "name": "spec-synthesis-or-measurement",
+                "status": "ready",
+                "tasks": ["0.1"],
+                "budget": "",
+                "evidence": [],
+                "stop_reason": "",
+            }
+        )
+
     if args.mode == "full":
         for index, agent in enumerate(agents, start=1):
             output_path = artifact_dir / "tasks" / f"1.{index}-{agent}.md"
@@ -196,8 +301,7 @@ def main() -> int:
             else:
                 skipped.append(output_path)
 
-    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    task_items = [
+    impl_tasks = [
         {
             "id": f"1.{index}",
             "name": agent,
@@ -207,30 +311,33 @@ def main() -> int:
             "allowed_scope": [],
             "task_path": f"tasks/1.{index}-{agent}.md" if args.mode == "full" else "",
             "report_path": f"1.{index}-{agent}-report.md" if args.mode == "full" else "",
-            "dependencies": [],
+            "dependencies": ["0.1"] if args.with_synthesis else [],
             "expected_outputs": [],
             "verification": [],
             "verification_gate": default_verification_gate(),
             "retry_count": 0,
             "budget": "",
-            "resource_budget": default_resource_budget(),
+            "runtime_budget_seconds": 1800,
+            "required_cwd": "",
+            "repository_root": "",
+            "required_branch": "",
             "evidence": [],
-            "stop_reason": "",
+            "stop_reason": "blocked_until_synthesis" if args.with_synthesis else "",
         }
         for index, agent in enumerate(agents, start=1)
     ]
-    stage_items = [
+    task_items.extend(impl_tasks)
+    stage_items.append(
         {
             "id": "1",
             "name": "initial execution",
-            "status": "planned" if task_items else "unplanned",
-            "tasks": [item["id"] for item in task_items],
+            "status": "planned" if impl_tasks else "unplanned",
+            "tasks": [item["id"] for item in impl_tasks],
             "budget": "",
-            "resource_budget": default_resource_budget(),
             "evidence": [],
             "stop_reason": "",
         }
-    ]
+    )
 
     if args.mode == "lite":
         generated_files = [
@@ -248,20 +355,29 @@ def main() -> int:
             "tdd_trace.jsonl",
             "run_state.json",
         ]
-    generated_files.extend(item["task_path"] for item in task_items if item["task_path"])
+        if args.with_synthesis:
+            generated_files.append("ALIGNMENT.md")
+    if args.with_state_witness:
+        generated_files.append("state_witness.md")
+    generated_files.extend(item["task_path"] for item in task_items if item.get("task_path"))
+
+    current_stage = "0" if args.with_synthesis else ("1" if impl_tasks else "")
 
     if args.mode == "lite":
         protocol_files = {
             "run_state.json": {
-                "version": 1,
+                "version": SCHEMA_VERSION,
                 "created_at": now,
                 "updated_at": now,
                 "title": args.title,
                 "mode": "lite",
                 "artifact_dir": str(artifact_dir),
                 "state_layers": default_state_layers(mode="lite"),
+                "state_witness": default_state_witness(True, args.required_verification_tier)
+                if args.with_state_witness
+                else default_state_witness(False, args.required_verification_tier),
                 "status": "intake",
-                "current_stage": "1" if stage_items else "",
+                "current_stage": "1" if impl_tasks else "",
                 "stages": stage_items,
                 "tasks": task_items,
                 "generated_files": generated_files,
@@ -269,12 +385,30 @@ def main() -> int:
             },
         }
     else:
+        full_state_layers = default_state_layers(
+            mode="full",
+            state_witness_required=args.with_state_witness,
+        )
+        if args.with_synthesis:
+            full_state_layers["working_state"]["current_stage"] = "0"
+            full_state_layers["session_state"]["document_priority"] = [
+                "task_spec.md",
+                "acceptance_registry.json",
+                "run_state.json",
+                "tasks/*",
+                "review prose",
+            ]
+
         protocol_files = {
             "capability_snapshot.md": (
                 "# Capability Snapshot\n\n"
                 f"- created_at: {now}\n"
                 f"- title: {args.title}\n"
                 "- delegation_mechanism:\n"
+                "- runtime_identity:\n"
+                "- per_agent_model_selection:\n"
+                "- available_model_profiles:\n"
+                "- model_routing_fallback:\n"
                 "- available_tools:\n"
                 "- unavailable_tools:\n"
                 "- constraints:\n"
@@ -286,7 +420,8 @@ def main() -> int:
                 "  - memory_boundary: candidates only; no automatic memory promotion\n"
             ),
             "acceptance_registry.json": {
-                "version": 1,
+                "version": SCHEMA_VERSION,
+                "evidence_policy": EVIDENCE_POLICY,
                 "created_at": now,
                 "title": args.title,
                 "tdd_trace_path": "tdd_trace.jsonl",
@@ -296,6 +431,10 @@ def main() -> int:
                         "description": "",
                         "status": "pending",
                         "required_evidence": [],
+                        "required_verification_tier": args.required_verification_tier
+                        if args.with_state_witness
+                        else "policy",
+                        "pass_algorithm": "",
                         "evidence": [],
                         "owner": "main-agent",
                         "verification_gate": default_verification_gate(),
@@ -311,13 +450,16 @@ def main() -> int:
                     "artifact_dir": str(artifact_dir),
                     "title": args.title,
                     "agents": agents,
+                    "with_synthesis": bool(args.with_synthesis),
                 },
                 ensure_ascii=False,
             )
             + "\n",
             "tdd_trace.jsonl": "",
             "run_state.json": {
-                "version": 1,
+                "version": SCHEMA_VERSION,
+                "evidence_policy": EVIDENCE_POLICY,
+                "routing_policy": MODEL_ROUTING_POLICY,
                 "created_at": now,
                 "updated_at": now,
                 "title": args.title,
@@ -325,16 +467,46 @@ def main() -> int:
                 "artifact_dir": str(artifact_dir),
                 "trace_path": "trace.jsonl",
                 "tdd_trace_path": "tdd_trace.jsonl",
-                "state_layers": default_state_layers(mode="full"),
+                "state_layers": full_state_layers,
+                "state_witness": default_state_witness(
+                    args.with_state_witness,
+                    args.required_verification_tier,
+                ),
                 "tdd_current_cycle_context": default_tdd_cycle_context(),
                 "status": "intake",
-                "current_stage": "1" if stage_items else "",
+                "current_stage": current_stage,
+                "synthesis": {
+                    "status": "required" if args.with_synthesis else "not_started",
+                    "fuzzy_goal": bool(args.with_synthesis),
+                    "alignment_packet_path": "ALIGNMENT.md" if args.with_synthesis else "",
+                    "checklist": {
+                        "rewritten_goal": False,
+                        "fake_success_list": False,
+                        "constraints_nongoals": False,
+                        "pass_algorithms": False,
+                        "risk_ordered_phases": False,
+                        "first_ready_task": False,
+                        "stop_conditions": False,
+                    },
+                    "recommended_defaults": [],
+                    "open_questions": [],
+                },
                 "stages": stage_items,
                 "tasks": task_items,
                 "generated_files": generated_files,
                 "stop_reason": "",
             },
         }
+
+    if args.mode == "full":
+        trace_event = json.loads(str(protocol_files["trace.jsonl"]))
+        trace_event["state_digests"] = {
+            filename: hashlib.sha256(
+                (json.dumps(protocol_files[filename], ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+            ).hexdigest()
+            for filename in ("run_state.json", "acceptance_registry.json")
+        }
+        protocol_files["trace.jsonl"] = json.dumps(trace_event, ensure_ascii=False) + "\n"
 
     for output_name, content in protocol_files.items():
         output_path = artifact_dir / output_name
@@ -346,6 +518,26 @@ def main() -> int:
             created.append(output_path)
         else:
             skipped.append(output_path)
+
+    if args.mode == "full" and args.with_synthesis:
+        alignment = (
+            "# Alignment Packet\n\n"
+            f"- title: {args.title}\n"
+            f"- created_at: {now}\n\n"
+            "## 1) Rewritten success (≤3 lines)\n\n"
+            "## 2) Fake-success list\n\n"
+            "1.\n2.\n3.\n\n"
+            "## 3) Default constraints / non-goals\n\n"
+            "## 4) Acceptance rules or Phase 0 measurement plan\n\n"
+            "## 5) Phase map + first ready task\n\n"
+            "## 6) Open decisions (with recommended defaults)\n\n"
+            "See references/spec-synthesis.md in agent-reliability-harness.\n"
+        )
+        alignment_path = artifact_dir / "ALIGNMENT.md"
+        if write_text(alignment_path, alignment, args.force):
+            created.append(alignment_path)
+        else:
+            skipped.append(alignment_path)
 
     print(f"artifact_dir={artifact_dir}")
     if created:

@@ -23,6 +23,15 @@
 - No-test reason:
 - Unverified critical path:
 
+## Production State Witness
+
+- Required for this task: yes / no
+- Witness path or compact matrix:
+- Real call-site inputs verified: yes / no
+- Failing state row:
+- Preserved blocking row:
+- Adversarial review handoff: pending; separate reviewer owns this gate
+
 ## Evidence
 
 - Command / check:

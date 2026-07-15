@@ -16,6 +16,19 @@ Use these role boundaries when assigning multi-agent work.
 
 Use for: unfamiliar code areas, dependency mapping, identifying test commands, locating ownership boundaries.
 
+## State Witness / Adversarial Reviewer
+
+- Owns production-state fidelity, not implementation.
+- Traces the reported user action through the real call sites that compute the decision.
+- Names every gate input, producer, lifecycle, and state combination in `state_witness.md`.
+- Reviews after GREEN and must try to find a real production combination missing from tests.
+- Returns FAIL when a test uses a synthetic or semantically unreachable combination, even if
+  the policy function passes.
+- A FAIL creates a repair task and a new RED → GREEN → REFACTOR cycle.
+
+Use for: blank/spinner/stuck UI, token/generation races, async queues, policy gates,
+feature flags, lifecycle cleanup, and any bug described with multiple Boolean/enum states.
+
 ## Worker
 
 - Implements a bounded slice.
@@ -31,9 +44,6 @@ Use for: frontend slice, backend slice, tests slice, migration slice, docs slice
 - Does not explain away missing evidence.
 - Must be allowed to return FAIL.
 - Checks for stubs, TODOs, mocks, UI/browser gaps, and missing readback.
-- Runs an independent completion-confidence check: compare the proposed final claim against the freshest evidence, name evidence gaps, and return `high`, `medium`, `low`, or `blocked` confidence.
-- Treats worker self-assessment, stale evidence, missing browser/readback checks, stubs, TODOs, mocks, and unverified critical paths as confidence reducers.
-- Must not force Direct or Lite work into Full Harness ceremony; use the evidence available for the selected mode unless the risk itself justifies escalation.
 
 Use for: user-facing workflows, high-risk changes, release gates, broad UI changes.
 

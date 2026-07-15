@@ -1,4 +1,14 @@
 interface:
-  display_name: "Agent Dispatch Harness"
-  short_description: "先判断 Direct/Lite/Full，并在需要时用 trace 检证多 Agent 调度"
-  default_prompt: "Use $agent-dispatch-harness to first choose Direct, Lite, or Full mode. Work directly for small tasks, coordinate lightly for medium tasks, and dispatch only when independent work or evidence risk makes it worthwhile. For simple Codex sub-agents, prefer gpt-5.6-luna at low reasoning when the runtime exposes model overrides; keep nesting shallow, reports compact, and manager-owned acceptance. Load TDD, review, worktree, or other supporting methods only when their risk trigger applies."
+  display_name: "Agent Reliability Harness"
+  short_description: "跨模型任务 OS：按风险选 Direct/Lite/Full，含糊目标先编译，证据验收，省 token"
+  default_prompt: >
+    Use $agent-reliability-harness as a universal task OS (Codex/Claude/Grok-agnostic).
+    First decide density: Direct for tiny clear work (no harness files); compact Spec Synthesis
+    for fuzzy or fake-success-prone goals; Lite for bounded parallel ownership; Full only for
+    long/resumable/high-risk work. After density, choose a cost-aware runtime profile and record
+    the requested versus resolved model when available. Do not spawn multi-agent unless authorized
+    and ownership is clean. Compile vague goals into success/fake-success/accept rules before coding.
+    For state/UI/async/concurrency bugs, trace the production call-site state and require a
+    witness matrix before implementation; policy-only tests cannot close user-visible acceptance.
+    Accept only on external evidence. Keep chat short; load references only when stuck. Prefer
+    proportionality over ceremony.

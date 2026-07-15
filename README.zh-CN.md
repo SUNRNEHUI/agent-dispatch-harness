@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness，原名 Multi-Agent Dispatcher，是面向 AI 编码代理的 skill，用于把明确的多智能体请求路由到最合适的执行模式。它避免小任务过度调度，并为长任务、高风险任务、可续跑任务和需要证据验收的任务提供持久化 harness。
 
-当前版本：**v5.11.0** · 2026-07-13
+当前版本：**v7.2.0** · 2026-07-15
 
 ---
 
@@ -389,6 +389,12 @@ Superpowers-style methods = 可选的工程支持方法
 ---
 
 ## 版本历史
+
+### v7.2.0
+
+- 为 state/UI/async/concurrency 任务增加 Production State Witness 契约，要求记录真实 source locator、可达的 failing/fixed/preserved truth-table 行、Observed before/Expected after，以及独立审查入口。
+- 将 witness 接入运行时门禁：stateful artifact 未通过 witness 校验时不能 seal、dispatch、validate 或进入 protected acceptance；独立 review 证据必须达到配置的 policy/flow/user-visible 层级。
+- 新增 `witness-set`、sealed witness digest、sealed-baseline dispatch 检查、对抗式压力测试和 source/install package 漂移检查。
 
 ### v5.11.0
 

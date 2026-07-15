@@ -1,18 +1,21 @@
 # Harness Protocol Reference
 
-This reference defines the v5 core protocol. It is intentionally separate from any one agent runtime. Runtime adapters may become thinner as models improve, but the manager still needs a durable protocol for state, evidence, budget, and final acceptance.
+This reference defines the v7.2 core protocol. It is intentionally separate from any one agent runtime. Runtime adapters may become thinner as models improve, but the manager still needs a durable protocol for state, evidence, budget, and final acceptance.
 
 ## Protocol Goal
 
 The harness turns multi-agent orchestration from advice into a required control loop:
 
 1. choose Direct, Lite, or Full mode
-2. discover actual runtime capabilities
-3. create a bounded spec and acceptance registry
-4. advance through explicit states
-5. collect worker, testing-gate, review, and evaluator evidence
-6. stop on budget or safety breaks
-7. claim completion only when required acceptance records pass
+2. when the goal is fuzzy or false-completion risk is high, run Spec Synthesis before implementation dispatch
+3. discover actual runtime capabilities
+4. create a bounded spec and acceptance registry with pass algorithms
+5. advance through explicit states
+6. collect worker, testing-gate, review, and evaluator evidence
+7. stop on budget or safety breaks
+8. claim completion only when required acceptance records pass
+
+Spec Synthesis details: `references/spec-synthesis.md`. Harness instance quality can be scored with `scripts/score_harness.py` (harness quality ≠ product success).
 
 ## Mode Selection Gate
 
@@ -57,6 +60,10 @@ Required records are mandatory only for Full Harness runs. Direct mode creates n
 
 A Full Harness run should preserve these records in durable files when the task is complex or resumable.
 
+The runtime schema version is defined once in `scripts/harness_schema.py`. Templates,
+initialization, validation, and guarded transitions must use that source. A mismatched or
+missing version is an integrity failure, not a hint to guess a migration.
+
 ### Capability Record
 
 - runtime name
@@ -80,6 +87,34 @@ A Full Harness run should preserve these records in durable files when the task 
 - evidence path
 - next action
 
+### Model Route Record
+
+- runtime identity established by the active adapter, not executable discovery alone
+- profile: `fast`, `main`, `planner`, or `critical_reviewer`
+- requested model and reasoning effort
+- resolved model when the runtime exposes it
+- observable route reason
+- escalation count
+
+Density selection happens first. A cheap model is not a reason to dispatch, and a requested
+model is not evidence that the runtime resolved it. Runtime-specific mappings live in
+`references/model-routing.md` and the matching adapter.
+
+### Production State Witness Record
+
+For state/UI/async/concurrency behavior, Full Harness must retain a `state_witness.md`
+record before implementation. It contains:
+
+- symptom and terminal user-facing condition;
+- exact production call chain and decision function;
+- state inputs with their producers and lifecycle;
+- truth table for failing, fixed, and preserved-blocking combinations;
+- executable test/fixture mapping for critical rows;
+- unknowns, logging added, and verification tier reached.
+
+The manager must run an adversarial call-site review after GREEN. A missing or unreachable
+row is a review FAIL and requires a new TDD cycle; it cannot be waived by a passing unit test.
+
 ### Acceptance Record
 
 - criterion
@@ -90,6 +125,7 @@ A Full Harness run should preserve these records in durable files when the task 
 - verification gate mode: `strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`
 - RED/GREEN evidence or substitute verification evidence for code behavior changes when applicable
 - spec compliance or code quality review evidence when required by risk
+- production-state witness and adversarial review evidence when stateful behavior is in scope
 - evaluator notes when relevant
 
 ### Testing Gate Record
@@ -106,24 +142,10 @@ Worker reports and acceptance records should carry the same gate mode. A report 
 ### Budget Record
 
 - stage budget
-- worker count, nesting depth, and follow-up limit
 - observed usage
 - breaker condition
 - stop reason
 - continuation decision
-
-The default budget is one bounded worker wave. Add workers or follow-ups only
-when each has a distinct expected result. If the expected quality or latency
-benefit no longer exceeds coordination cost, stop and continue with the manager
-or record a decision. Token/cost improvements must be measured on representative
-tasks rather than inferred from a model label.
-
-When a token budget is supplied, `run_state.json` records `token_budget`,
-`tokens_used`, `tokens_remaining`, `usage_kind` (`actual`, `estimated`, or
-`unknown`), `accounting_note`, and `exhaustion_action`. A missing counter is an
-explicit unknown fallback, not a character-count estimate. Exhausted or
-unaccountable configured budgets block acceptance until a stop/decision is
-recorded; the manager may not claim success from a worker summary alone.
 
 ### Trace Record
 
@@ -133,6 +155,57 @@ recorded; the manager may not claim success from a worker summary alone.
 - evaluator result
 - commands or checks that matter for acceptance
 - final registry status
+
+Trace files are JSONL: every non-empty line must be one JSON object. Examples do not belong
+in runtime trace templates. A started state transaction without a matching committed event
+is an incomplete transition and blocks resume or acceptance.
+
+## Controlled Runtime Operations
+
+After `init_run.py --mode full`, use the narrow control surface instead of hand-editing live
+run, task, or acceptance statuses:
+
+```bash
+python3 <skill-dir>/scripts/harnessctl.py validate <artifact-dir>
+python3 <skill-dir>/scripts/harnessctl.py seal <artifact-dir> --reason "reviewed synthesis baseline"
+python3 <skill-dir>/scripts/harnessctl.py dispatch-create <artifact-dir> --worker-id <runtime-worker-id> --task-id 1.1 --contract-path tasks/1.1-worker.md --report-path 1.1-worker-report.md --runtime codex --profile main --requested-model gpt-5.6-luna --reasoning-effort xhigh --route-reason "default high-frequency manager"
+python3 <skill-dir>/scripts/harnessctl.py dispatch-update <artifact-dir> --dispatch-id <id> --status reported
+python3 <skill-dir>/scripts/harnessctl.py task-set <artifact-dir> --task-id 1.1 --status ready
+python3 <skill-dir>/scripts/harnessctl.py task-set <artifact-dir> --task-id 1.1 --status running
+python3 <skill-dir>/scripts/harnessctl.py task-set <artifact-dir> --task-id 1.1 --status passed --evidence-file <artifact-relative-report-or-log> --no-test-reason <reason-if-not-applicable>
+python3 <skill-dir>/scripts/harnessctl.py acceptance-set <artifact-dir> --criterion-id AC-001 --status pass --evidence-file <artifact-relative-report-or-log> --pass-algorithm <rule> --no-test-reason <reason-if-not-applicable>
+# Advance the legal run sequence; do not jump directly from intake to accepted.
+python3 <skill-dir>/scripts/harnessctl.py run-set <artifact-dir> --status gated
+python3 <skill-dir>/scripts/harnessctl.py run-set <artifact-dir> --status specified
+# ... dispatched -> reported -> evaluating ...
+python3 <skill-dir>/scripts/harnessctl.py run-set <artifact-dir> --status accepted --evidence-file <final-verification-report>
+python3 <skill-dir>/scripts/harnessctl.py recover <artifact-dir>
+```
+
+The controller validates the current and candidate documents, rejects illegal transitions
+or unverified PASS states, writes state atomically under an artifact lock, and journals
+started/committed transaction events. `validate` also rejects malformed JSONL, empty
+acceptance registries, schema drift, incomplete transactions, unresolved terminal tasks/stages,
+chat-only dispatches, canonical-state digest drift, evidence receipt/digest mismatch, and invalid active TDD traces. Journal records carry before/after digests; `recover` appends a
+committed or aborted terminal event only when the canonical state matches one of those digests.
+
+`seal` is the explicit pre-dispatch boundary for reviewed human-authored state. It is allowed only before execution and does not make prose correct; it records that the manager intentionally accepts the current structured baseline. New Full runs treat free-form `--evidence` as non-qualifying legacy context. `--evidence-file` hashes a non-empty artifact file and binds that receipt to the committed transition; a worker report still needs manager review and the relevant testing/evaluator gate.
+
+Before dispatch, validate human-authored Full specs semantically:
+
+```bash
+python3 <skill-dir>/scripts/validate_report.py <artifact-dir>/task_spec.md --type spec --require-filled
+```
+
+For stateful behavior, validate the witness before sealing or dispatching:
+
+```bash
+python3 <skill-dir>/scripts/state_witness_check.py <artifact-dir>/state_witness.md --require-filled
+```
+
+The validator accepts explicit localized aliases and structural numbering, but rejects empty,
+placeholder-only, heading-echo, generic completion-word, duplicate, or fenced-example sections. Template shape alone is never
+acceptance evidence.
 
 ## State Machine
 
@@ -167,27 +240,13 @@ The manager can say the task is complete only when:
 - every required acceptance record is `pass` or explicitly `scoped_out` by user decision
 - required testing gate evidence has been reviewed, including RED/GREEN or substitute fields when applicable
 - required spec compliance and code quality reviews are `pass` or explicitly scoped out by user decision
+- required state witness and adversarial review are `pass` for stateful behavior
+- user-visible acceptance is not closed by policy-only evidence; flow/device/browser evidence or an explicit blocked boundary is recorded
 - evaluator `FAIL` has been resolved or explicitly scoped out by user decision
 - budget breakers are closed with a continuation or stop decision
 - trace points to the evidence used for completion
 
 Worker success is not completion. A worker report is input to acceptance, not the acceptance decision itself.
-
-## Completion Confidence Loop
-
-Before final handoff, run a proportional confidence loop. It is a claim check, not a new artifact requirement.
-
-1. Restate the completion claim in one sentence.
-2. Map the claim to the freshest available evidence: command results, diff or output review, browser/API/readback checks, worker reports, evaluator reports, or acceptance records.
-3. List anything that could still make the claim false: missing checks, stale evidence, self-report-only evidence, stubs, TODOs, mocks, skipped paths, unavailable tools, or assumptions.
-4. Set completion confidence:
-   - `high`: required evidence passed and no material unverified path remains.
-   - `medium`: core evidence passed, and remaining gaps are non-critical and disclosed.
-   - `low`: important evidence is missing, stale, self-reported only, or inconsistent with the claim.
-   - `blocked`: required evidence failed, is unavailable without a decision, or an evaluator/acceptance item blocks completion.
-5. If confidence is `low` or `blocked`, do not claim completion. Run the missing check, create a repair or decision item, or hand off as blocked.
-
-Direct mode keeps this as a short final self-check. Lite Orchestration may capture it in compact plan or report notes. Full Harness ties it to the acceptance registry, trace, progress ledger, and evaluator report when present.
 
 ## What Gets Thinner As Models Improve
 

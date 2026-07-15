@@ -4,7 +4,7 @@
 
 Agent Dispatch Harness, formerly Multi-Agent Dispatcher, is an agent skill for routing explicit multi-agent requests into the smallest execution mode that can complete the work reliably. It avoids unnecessary delegation for small tasks and provides a durable harness for long, risky, resumable, evidence-verified work.
 
-Current version: **v5.11.0** · 2026-07-13
+Current version: **v7.2.0** · 2026-07-15
 
 ---
 
@@ -389,6 +389,12 @@ Mode selection always runs first. Supporting methods are applied only when they 
 ---
 
 ## Release History
+
+### v7.2.0
+
+- Added a Production State Witness contract for state/UI/async/concurrency work, including source locators, reachable truth-table rows, observed-before/expected-after values, and preserved blocking cases.
+- Enforced the witness at runtime: invalid stateful artifacts cannot seal, dispatch, validate, or reach protected acceptance; independent review evidence must meet the configured policy/flow/user-visible tier.
+- Added `witness-set`, sealed witness digests, sealed-baseline dispatch checks, adversarial pressure tests, and source/install package drift checks.
 
 ### v5.11.0
 

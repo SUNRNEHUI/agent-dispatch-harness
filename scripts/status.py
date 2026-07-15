@@ -7,10 +7,21 @@ import argparse
 import json
 from pathlib import Path
 
+from harness_schema import ACCEPTANCE_STATUSES as VALID_ACCEPTANCE_STATUSES
+from harnessctl import (
+    validate_active_tdd_gates,
+    validate_canonical_state_digests,
+    validate_cross_file_invariants,
+    validate_evidence_receipts,
+    validate_jsonl,
+    validate_trace_transactions,
+)
+from validate_report import validate_acceptance_registry, validate_run_state
+
 
 DONE_TASK_STATUSES = {"passed", "merged"}
 BLOCKING_TASK_STATUSES = {"blocked", "verify_failed"}
-ACCEPTANCE_STATUSES = ("pass", "pending", "fail", "blocked", "scoped_out")
+ACCEPTANCE_STATUSES = tuple(sorted(VALID_ACCEPTANCE_STATUSES))
 
 
 def load_state(path: Path) -> dict[str, object]:
@@ -46,31 +57,6 @@ def task_blockers(tasks: list[object]) -> list[str]:
             name = item.get("name", "")
             reason = item.get("stop_reason") or "no stop reason recorded"
             blockers.append(f"{task_id} {name}: {reason}")
-    return blockers
-
-
-def resource_budget_blockers(items: list[object], scope: str = "task") -> list[str]:
-    blockers: list[str] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        budget = item.get("resource_budget")
-        if not isinstance(budget, dict) or not isinstance(budget.get("token_budget"), int):
-            continue
-        task_id = item.get("id", "?")
-        name = item.get("name", "")
-        label = f"{scope} {task_id} {name}".strip()
-        usage_kind = budget.get("usage_kind")
-        if usage_kind == "unknown":
-            blockers.append(f"{label}: token budget accounting unavailable")
-            continue
-        tokens_used = budget.get("tokens_used")
-        tokens_remaining = budget.get("tokens_remaining")
-        if (
-            isinstance(tokens_used, int)
-            and tokens_used >= budget["token_budget"]
-        ) or (isinstance(tokens_remaining, int) and tokens_remaining <= 0):
-            blockers.append(f"{label}: token budget exhausted")
     return blockers
 
 
@@ -111,6 +97,8 @@ def acceptance_rollup(registry: dict[str, object] | None) -> tuple[dict[str, int
     criteria = registry.get("criteria")
     if not isinstance(criteria, list):
         return counts, ["acceptance registry missing criteria list"], True
+    if not criteria:
+        return counts, ["acceptance registry has no criteria"], True
 
     for index, item in enumerate(criteria, start=1):
         if not isinstance(item, dict):
@@ -152,8 +140,9 @@ def confidence_level(
     registry_error: bool,
     done: int,
     total: int,
+    integrity_errors: list[str],
 ) -> str:
-    if blockers or conflicts or registry_error or acceptance_counts["fail"] or acceptance_counts["blocked"]:
+    if integrity_errors or blockers or conflicts or registry_error or acceptance_counts["fail"] or acceptance_counts["blocked"]:
         return "blocked"
     if mode == "full" and registry_status != "available":
         return "unknown"
@@ -176,6 +165,7 @@ def next_verification(
     registry_error: bool,
     done: int,
     total: int,
+    integrity_errors: list[str],
 ) -> str:
     if blockers:
         return "resolve blockers"
@@ -183,6 +173,8 @@ def next_verification(
         return "repair acceptance_registry.json"
     if conflicts:
         return "repair accepted run state or acceptance registry"
+    if integrity_errors:
+        return "repair artifact integrity errors"
     if mode == "full" and registry_status == "missing":
         return "create or locate acceptance_registry.json"
     if mode == "full" and registry_status == "unreadable":
@@ -196,39 +188,6 @@ def next_verification(
     if total and done < total:
         return "finish remaining tasks"
     return "none"
-
-
-def status_confidence(data: dict[str, object], state_path: Path) -> str:
-    mode = str(data.get("mode") or "full")
-    status = str(data.get("status") or "unknown")
-    raw_tasks = data.get("tasks")
-    tasks = raw_tasks if isinstance(raw_tasks, list) else []
-    raw_stages = data.get("stages")
-    stages = raw_stages if isinstance(raw_stages, list) else []
-    registry_status = "not_applicable"
-    registry: dict[str, object] | None = None
-    if mode == "full":
-        registry_status, registry = load_acceptance_registry(state_path.parent / "acceptance_registry.json")
-    acceptance_counts, acceptance_gaps, registry_error = acceptance_rollup(registry)
-    blockers = [
-        *task_blockers(tasks),
-        *resource_budget_blockers(tasks),
-        *resource_budget_blockers(stages, "stage"),
-    ]
-    conflicts = accepted_state_conflicts(status, acceptance_counts, registry_error)
-    evidence_gaps = [*task_evidence_gaps(tasks), *acceptance_gaps]
-    done, total = task_completion(tasks)
-    return confidence_level(
-        mode,
-        registry_status,
-        acceptance_counts,
-        blockers,
-        conflicts,
-        evidence_gaps,
-        registry_error,
-        done,
-        total,
-    )
 
 
 def format_status(data: dict[str, object], state_path: Path | None = None) -> str:
@@ -263,8 +222,10 @@ def format_status(data: dict[str, object], state_path: Path | None = None) -> st
 
     registry_status = "not_applicable"
     registry: dict[str, object] | None = None
+    registry_path: Path | None = None
     if state_path is not None and mode == "full":
-        registry_status, registry = load_acceptance_registry(state_path.parent / "acceptance_registry.json")
+        registry_path = state_path.parent / "acceptance_registry.json"
+        registry_status, registry = load_acceptance_registry(registry_path)
     acceptance_counts, acceptance_gaps, registry_error = acceptance_rollup(registry)
     if mode == "full":
         if registry_status == "available":
@@ -279,12 +240,7 @@ def format_status(data: dict[str, object], state_path: Path | None = None) -> st
         else:
             lines.append(f"Acceptance: {registry_status}")
 
-    stage_items = stages if isinstance(stages, list) else []
-    blockers = [
-        *task_blockers(tasks),
-        *resource_budget_blockers(tasks),
-        *resource_budget_blockers(stage_items, "stage"),
-    ]
+    blockers = task_blockers(tasks)
     lines.append("Blockers: " + ("; ".join(blockers) if blockers else "none"))
 
     conflicts = accepted_state_conflicts(status, acceptance_counts, registry_error)
@@ -293,6 +249,21 @@ def format_status(data: dict[str, object], state_path: Path | None = None) -> st
 
     evidence_gaps = [*task_evidence_gaps(tasks), *acceptance_gaps]
     lines.append("Evidence gaps: " + ("; ".join(evidence_gaps) if evidence_gaps else "none"))
+
+    integrity_errors = validate_run_state(state_path) if state_path is not None else []
+    if state_path is not None and mode == "full":
+        if registry_path is not None and registry_status == "available":
+            integrity_errors.extend(validate_acceptance_registry(registry_path))
+            integrity_errors.extend(validate_cross_file_invariants(state_path, registry_path))
+            if registry is not None:
+                integrity_errors.extend(validate_active_tdd_gates(state_path.parent, data, registry))
+        trace_path = state_path.parent / "trace.jsonl"
+        integrity_errors.extend(validate_jsonl(trace_path))
+        integrity_errors.extend(validate_jsonl(state_path.parent / "tdd_trace.jsonl"))
+        integrity_errors.extend(validate_trace_transactions(trace_path))
+        integrity_errors.extend(validate_canonical_state_digests(state_path.parent))
+        integrity_errors.extend(validate_evidence_receipts(state_path.parent))
+    lines.append("Integrity errors: " + ("; ".join(integrity_errors) if integrity_errors else "none"))
 
     confidence = confidence_level(
         mode,
@@ -304,21 +275,31 @@ def format_status(data: dict[str, object], state_path: Path | None = None) -> st
         registry_error,
         done,
         total,
+        integrity_errors,
     )
+    stage_records = [item for item in stages if isinstance(item, dict)] if isinstance(stages, list) else []
+    stages_complete = bool(stage_records) and all(item.get("status") in {"passed", "merged"} for item in stage_records)
+    terminal_run = status in {"accepted", "handed_off"}
+    if confidence == "high" and (not terminal_run or not stages_complete):
+        confidence = "medium"
     lines.append(f"Completion confidence: {confidence}")
+    next_action = next_verification(
+        mode,
+        registry_status,
+        acceptance_counts,
+        blockers,
+        conflicts,
+        evidence_gaps,
+        registry_error,
+        done,
+        total,
+        integrity_errors,
+    )
+    if next_action == "none" and (not terminal_run or not stages_complete):
+        next_action = "finalize run status and stage rollup through harnessctl.py run-set"
     lines.append(
         "Next verification: "
-        + next_verification(
-            mode,
-            registry_status,
-            acceptance_counts,
-            blockers,
-            conflicts,
-            evidence_gaps,
-            registry_error,
-            done,
-            total,
-        )
+        + next_action
     )
 
     state_layers = data.get("state_layers")
@@ -343,21 +324,11 @@ def format_status(data: dict[str, object], state_path: Path | None = None) -> st
 def main() -> int:
     parser = argparse.ArgumentParser(description="Print a compact run status from run_state.json.")
     parser.add_argument("path", type=Path, help="Path to run_state.json")
-    parser.add_argument(
-        "--require-high-confidence",
-        action="store_true",
-        help="Exit nonzero unless the run reaches high completion confidence.",
-    )
     args = parser.parse_args()
 
     path = args.path.expanduser().resolve()
     data = load_state(path)
     print(format_status(data, path))
-    if args.require_high_confidence:
-        confidence = status_confidence(data, path)
-        if confidence != "high":
-            print("Status gate: requires high completion confidence")
-            return 1
     return 0
 
 

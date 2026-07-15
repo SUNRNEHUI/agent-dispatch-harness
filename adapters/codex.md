@@ -1,6 +1,6 @@
 # Codex Runtime Adapter
 
-This adapter maps the v5 harness protocol onto Codex-style runtimes. It is not a feature comparison; it is a checklist of practical control points the manager must use or explicitly mark unavailable.
+This adapter maps the harness protocol onto Codex-style runtimes. Prefer `SKILL.md` v5.8+ density rules and `adapters/universal.md` first; this file is Codex-specific control points only.
 
 ## Persistent Instructions
 
@@ -19,20 +19,24 @@ In Codex, skill loading and actual dispatch are separate decisions. If the user 
 
 Do not default to subagents, worktrees, or full artifact initialization merely because Codex makes local file edits, shell checks, and parallel worker prompts easy to operate. Medium tasks should normally use Lite Orchestration: a short plan, bounded worker or stage reports when useful, and targeted acceptance evidence. Escalate to Full Harness only for resumable, high-risk, multi-stage, evaluator-sensitive, or rollback-heavy work.
 
-## GPT-5.6 Model And Reasoning Controls
+## Cost-Aware Model Profiles
 
-Load `references/model-routing.md` when choosing a spawned-agent model. The
-Codex mapping is Luna/low for simple read-heavy work, Terra for moderate work,
-and Sol for critical review; keep the manager on its active configuration and
-raise reasoning only when risk or evaluation justifies it. Current Codex
-runtimes may expose `model`, `model_reasoning_effort`, `agents.max_threads`, and
-`agents.max_depth`; use them as capabilities, not as a task fan-out target.
+Run density selection before model selection. Do not spawn a cheaper subagent for a tiny
+task that the active main thread can finish with less coordination.
 
-Keep depth at one, start with a bounded wave, and do not retry indefinitely. If
-the runtime cannot select a model, inherit its configuration and record the
-fallback; do not imply that an override succeeded. Do not add GPT-5.6-only API
-fields, Pro mode, prompt-cache fields, or Programmatic Tool Calling to this
-adapter without an implementation-specific compatibility check.
+This installation uses an explicit GPT-5.6 policy:
+
+| Profile | Codex model | Effort | Use |
+|---|---|---|---|
+| `fast` | `gpt-5.6-luna` | `medium` | simple and mechanically verifiable |
+| `main` | `gpt-5.6-luna` | `xhigh` | normal high-frequency manager/executor |
+| `planner` | `gpt-5.6-sol` | `high` | fuzzy planning, architecture, harness synthesis |
+| `critical_reviewer` | `gpt-5.6-sol` | `xhigh` | high risk, conflict, repeated validation failure |
+
+Terra is deliberately excluded. Use `scripts/model_router.py` for deterministic selection.
+Escalation has priority over cost: high risk, worker conflict, or two validation failures
+routes to `critical_reviewer`. When the runtime exposes the actual resolved model, record
+it separately from the requested model.
 
 ## Capability Gate
 
@@ -44,6 +48,7 @@ Record the actual session capabilities before dispatch:
 - browser or app automation tools
 - image, document, spreadsheet, or other specialized tools if relevant
 - whether real sub-agent delegation exists in the active environment
+- whether per-agent model selection exists and which model was actually resolved
 - whether supporting skills or methods are available for TDD, worktrees, systematic debugging, code review, verification, or parallel-agent discipline
 - whether worktrees are safe given current git status
 
@@ -80,10 +85,6 @@ When Codex has a real delegation mechanism, each worker should receive:
 - required evidence
 - stop conditions
 - four-line return contract
-
-Use a fresh task-local context when the runtime supports it. Prefer read-heavy
-parallel work; keep dependent writes sequential and do not pass raw logs or the
-full parent transcript to every worker.
 
 When it does not, the manager can still run the same protocol with sequential stages. The state machine should show the fallback so later readers know no parallel isolation occurred.
 

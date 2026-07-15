@@ -1,410 +1,250 @@
 ---
-name: agent-dispatch-harness
+name: agent-reliability-harness
 description: >
-  Use when the user explicitly asks for multi-agent work, delegated agents,
-  sub-agents, parallel agents, DAG scheduling, worktree-based parallel execution,
-  分头处理, 分别派, 拆给不同 agent, 多智能体, 多 Agent, or resumable/evidence-verified
-  long-running agent coordination, including references to Agent Dispatch Harness
-  or the former Multi-Agent Dispatcher name.
+  Use when a task explicitly requests multi-agent, sub-agent, DAG, worktree, or parallel
+  delegation; when a vague or improvement-shaped goal is easy to fake-complete; or when
+  long, resumable, high-risk work needs durable evidence and acceptance across sessions.
+  Former names: Agent Dispatch Harness; Multi-Agent Dispatcher.
 ---
 
-# Agent Dispatch Harness
+# Agent Reliability Harness
 
-Use this skill when the user asks for or clearly authorizes multiple agents, delegated work, parallel stages, or worktree isolation. Multi-agent work is usually a long-task engineering loop, but explicit multi-agent wording does not force dispatch. Earlier releases used the name Multi-Agent Dispatcher; treat that as the same workflow during migration.
+**What this is:** a runtime-agnostic **task OS** — precise execution with intelligent
+proportional process. Not “always multi-agent”, not “always write a big harness”.
 
-This skill is the routing authority for multi-agent requests. Other planning, TDD, worktree, review, verification, or parallel-agent methods are supporting methods after this skill selects Direct Mode, Lite Orchestration, or Full Harness.
-
-First choose the lightest mode that can finish and verify the task:
-
-```text
-Small, local, obvious?        -> Direct Mode
-Moderate, separable slices?   -> Lite Orchestration
-Long, risky, resumable?       -> Full Harness
-```
-
-Do not create DAGs, artifacts, worker prompts, or sub-agent runs for coordination theater.
-
-Do not silently infer multi-agent execution merely because a task is broad. If multi-agent work seems useful but the user has not authorized it, propose it briefly or proceed as a single agent according to the normal task flow.
-
-The manager owns scheduling, state, merge, and final acceptance. Sub-agents own bounded execution units.
-
-The active parent model is the only root orchestrator. Never create a second
-scheduler, and treat an explicit `no subagents` instruction as stronger than
-any saved preference or available worker capacity.
-
-Full artifact mode only when justified. When Full Harness is active, the manager must produce durable state and verification evidence before claiming completion. Otherwise keep state lightweight and proportional to the work.
-
-## GPT-5.6-Aware Dispatch
-
-When the runtime supports explicit model and reasoning controls, load
-`references/model-routing.md` only when assigning sub-agent work. Keep the
-manager on its active parent configuration, use the adapter's role mapping, and
-record unavailable overrides instead of claiming a model was used.
-
-Treat sub-agent work as a budgeted optimization: one bounded wave, shallow
-nesting, task-local prompts, compact reports, and no follow-up loop without new
-evidence. Stop when coordination costs more than the independent result is
-worth. The model choice never changes manager-owned acceptance or safety gates.
-
-## Mode Selection
-
-Run this decision before capability checks, DAG creation, artifact initialization, or worker assignment.
-
-### Direct Mode
-
-Use Direct Mode when the task is a small edit, one-file change, direct command, simple config tweak, narrow bug, small question, or any task one agent can finish and verify locally.
-
-In Direct Mode:
-
-- Do not dispatch workers.
-- Do not create DAGs, artifact directories, capability snapshots, ledgers, or reports.
-- Execute directly, verify normally, and summarize the result.
-
-If the user asked for multi-agent on a small task, respond briefly and proceed directly:
+**Works on:** Codex, Claude Code, Grok, and any agent that can read files, run
+commands, and follow a short protocol. Runtime adapters are optional polish, not required.
 
 ```text
-这个任务很小，不值得启动多 agent。我会按单 agent 直接完成并验证。
+User intent  →  density decision  →  Spec/State Witness when needed  →  execute  →  evidence  →  done
 ```
 
-If the user explicitly says to force multi-agent despite the overhead, explain the overhead once. Proceed only if the user confirms that the overhead is intentional.
+## 0. Non-negotiables
 
-### Lite Orchestration
+1. **Proportionality** — use the lightest mode that still makes false completion hard.
+2. **Evidence over self-report** — commands, diffs, logs, tests, screenshots; never “我觉得完成了”.
+3. **Terminal success is defined** — if success is easy to fake, define fake-success first.
+4. **User owns intent + veto; you own compilation + verification.**
+5. **Do not spend tokens on ceremony** that does not reduce risk or enable resume.
+6. **Production-state fidelity** — a passing policy test is not evidence unless its inputs
+   are traced to a real production call site and state combination.
 
-Use Lite Orchestration when the task is medium-sized, has separable ownership slices, and benefits from bounded workers or short reports, but does not need resumable full-state machinery.
+## 1. Density decision (when to write a harness)
 
-In Lite Orchestration:
+Answer in order. **Stop at the first match.**
 
-- Use a short plan with owners, scopes, expected outputs, and verification.
-- Keep worker count bounded to the clear parallel surfaces.
-- Apply parallel-agent discipline: dispatch only independent problem domains with no shared edit surface or unresolved sequential dependency.
-- Give each worker fresh, task-local context rather than relying on hidden conversation history.
-- Prefer short inline status or compact reports over a full artifact set.
-- If a lightweight artifact helps coordination, use `init_run.py --mode lite` to create `lite_plan.md` and minimal `run_state.json`; otherwise keep the plan inline.
-- Do not create `capability_snapshot.md`, `acceptance_registry.json`, `trace.jsonl`, `tdd_trace.jsonl`, or a full artifact directory unless risk or resumability justifies it.
-- Manager still owns merge, verification, and final acceptance.
+| If… | Mode | Write on disk? | Token budget |
+|-----|------|----------------|--------------|
+| Typo, one file, obvious command, narrow bug, pure Q&A | **Direct** | **No** harness files | Just do + verify |
+| Clear goal, 2–5 steps, one owner, low false-completion risk | **Direct+** | Optional 5–10 line plan **in chat only** | No `workspace/` |
+| Fuzzy goal **or** easy fake success **or** improvement-shaped (faster/better) | **Synthesize first** | Compact in chat, or Lite notes, or Full files — see §2 | Synthesis short; Full only if long |
+| Medium work, clean parallel ownership, user OK with workers | **Lite** | Short plan + compact reports; **no** full registry by default | Bounded workers |
+| Long / multi-stage / resumable / multi-session / high risk / need evaluator | **Full** | Durable `workspace/<slug>/` artifacts | Worth the tokens |
 
-### Full Harness
+**Hard rules**
 
-Use Full Harness only when the task is long, high-risk, resumable, multi-stage, has multiple real workers, needs worktree isolation, requires an evaluator, or must preserve durable evidence across sessions.
+- Multi-agent **words** ≠ must dispatch. Tiny task + “用多 agent” → still Direct (say so once).
+- **Single owner** + medium steps → **Direct+** (chat plan), even if user said multi-agent — Lite only when parallel ownership is real.
+- Fuzzy goal ≠ Full harness. Prefer **compact synthesis** (§2) then Direct/Lite.
+- Improvement-shaped (latency, cost, accuracy) → at least terminal metric + baseline plan before “optimize”.
+- State/UI/async/concurrency symptoms (blank, spinner, stale, stuck, race) → require a
+  Production State Witness before implementation or dispatch.
+- If coordination cost > implementation cost → do not dispatch.
 
-Full Harness uses the complete protocol:
+**Do NOT create** `run_state.json` / full artifact dirs for small or medium tasks unless Full triggers fire.
+
+### Cost-aware model routing (after density)
+
+Model choice never justifies dispatch. Finish a tiny task in the current thread; use a
+cheaper worker only when repeated/parallel work outweighs coordination cost.
+
+| Profile | Model / effort | Route |
+|---|---|---|
+| `fast` | Luna `medium` | simple + mechanically verifiable |
+| `main` | Luna `xhigh` | default high-frequency manager/executor |
+| `planner` | Sol `high` | fuzzy goals, planning, harness synthesis |
+| `critical_reviewer` | Sol `xhigh` | high risk, conflict, two validation failures |
+
+Terra is not used by this Codex policy. Run `scripts/model_router.py` when uncertain. Persist
+the runtime/profile/model/reason in every real Full dispatch. Deep rules and CLI:
+`references/model-routing.md`.
+
+## 2. Spec Synthesis (fuzzy → executable)
+
+When the user cannot fully specify success, **you compile** — user reviews/vetoes.
+
+### Compact (default — chat or `synthesis_notes.md`)
 
 ```text
-Context Intake -> Mode Selection -> Capability Gate -> Spec -> Artifact Directory -> DAG / Plan Gate -> Sub-Agent Execution -> State Update -> Verification Gate -> Stop/Rollback Check -> Merge -> Handoff
+1) Success: user-facing + system condition (≤3 lines)
+2) Not success: ≥3 fake-success items (if risk)
+3) Non-goals / constraints (defaults OK, mark recommended)
+4) Accept: pass rule OR “TBD after measure: …” (never invent SLOs)
+5) Steps: risk-ordered (measure before optimize when needed)
+6) First action + stop conditions
 ```
 
-Use real delegation or sub-agent tools only after Mode Selection chooses Lite Orchestration or Full Harness and the tools are available. When the user explicitly asks for real sub-agents, check the active tools or tool discovery if available before falling back. If no such tool is available, do not pretend to run parallel agents; create the DAG and execute stages sequentially or explain the limitation.
+### Full (only if §1 says Full)
 
-## Protocol Gates
-
-For Full Harness, the manager must pass these gates:
-
-1. **Mode Selection Gate:** decide between Direct Mode, Lite Orchestration, and Full Harness.
-2. **Capability Gate:** record the current runtime abilities and fallback plan.
-3. **Plan Gate:** define the DAG, ownership, budgets, verification method, and stop conditions.
-4. **State Gate:** write stage/task status to durable artifacts after every meaningful stage.
-5. **Testing / Review Gate:** for code behavior changes, require the right testing gate (`strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`) and record auditable evidence; for high-risk implementation, separate spec compliance review from code quality review.
-6. **Verification Gate:** map evidence to acceptance criteria before PASS.
-7. **Supervision Gate:** stop when budget, risk, ownership, or verification rules require it.
-
-If a gate cannot be satisfied, stop with `BLOCKED` or `需要决策` and leave a handoff. Do not replace missing evidence with a confident summary.
-
-## When To Apply
-
-Load this skill when at least one is true:
-
-- The user explicitly asks for multiple agents, sub-agents, delegation, parallel agents, DAG scheduling, or worktree isolation.
-- The user asks to split agent work across independently owned tracks such as frontend, backend, tests, docs, data migration, or evaluator.
-- The user asks for a multi-agent task that must be resumable, verified, or continued across sessions.
-- The user says agents may be used if useful, and the task is genuinely parallelizable with clear ownership boundaries.
-
-Actually dispatch multiple agents only when Mode Selection chooses Lite Orchestration or Full Harness. Do not dispatch for small edits, simple questions, direct command results, or ordinary single-agent coding where one agent can finish and verify locally, even if the user casually mentions multi-agent execution.
-
-High-impact operations such as production data, publishing, permissions, paid APIs, or destructive actions do not independently trigger this skill. They are escalation and stop conditions after a multi-agent workflow has already been authorized.
-
-## Dispatch Criteria
-
-Choose Lite Orchestration or Full Harness when at least two of these are true:
-
-- The task has multiple independent ownership surfaces that can proceed in parallel, such as frontend, backend, tests, docs, migration, or evaluator.
-- The task is long, risky, resumable, or likely to exceed a normal single-agent context loop.
-- Independent review or an evaluator materially reduces false completion risk.
-- Worktree or file ownership isolation would reduce merge, rollback, or regression risk.
-- The user explicitly asks for separate agents to compare approaches, investigate distinct hypotheses, or execute bounded tracks.
-
-Dispatch is not justified when any of these dominate:
-
-- The task is a typo fix, small copy edit, direct command, one-file change, simple config tweak, or narrow local bug.
-- The manager would spend more effort coordinating than implementing and verifying.
-- There are no clean ownership boundaries or all workers would need the same files at the same time.
-- Candidate tasks share unresolved state or must be done sequentially.
-- The only reason to dispatch is that the user used the words "multi-agent" or "agents" without a task that benefits from delegation.
-
-Before dispatch, name the independent result that justifies each worker. Start
-with one wave of no more than two Lite workers or three Full workers, keep
-nesting at depth one, and allow at most one follow-up per worker. Use a smaller
-budget when a single local sequence can finish the task. Stop if workers are
-redundant, ownership becomes unclear, or synthesis costs exceed the expected
-benefit.
-
-## Operating Modes
-
-- **Direct Mode:** For small or localized work, execute directly without dispatch or artifacts.
-- **Lite Orchestration:** For moderate delegated work, keep the plan and reporting brief. Continue executing unless a hard stop condition appears.
-- **Decision alignment:** Resolve ordinary planning ambiguity from context. Ask the user only when the unresolved choice changes scope, ownership, an irreversible action, verification, or user-visible behavior.
-- **Full Harness:** For long, risky, resumable, or truly parallel work, write durable artifacts and update them at stage boundaries.
-
-Do not block ordinary implementation just to ask for plan approval. Pause only when scope, risk, ambiguity, destructive operations, or repeated verification failures make a wrong decision expensive.
-
-## Artifacts
-
-Full artifact mode only when justified. Direct Mode creates no orchestration artifacts. Lite Orchestration defaults to no full artifact set; use only a short plan, compact worker reports, or existing project planning files unless risk increases.
-
-Prefer existing project planning, issue, or workspace conventions. If none exist, place artifacts under `<active-project-root>/workspace/<task-slug>/`.
-
-Recommended Full Harness files:
-
-- `task_spec.md`: goal, non-goals, constraints, acceptance criteria, verification evidence, risks, budget, and stop conditions.
-- `capability_snapshot.md`: available sub-agent, browser, worktree, shell, network, MCP, approval, and publish/deploy capabilities plus fallback plan.
-- `run_state.json`: machine-readable stages, tasks, status, budgets, retries, state layers, evidence ids, and stop reasons.
-- `acceptance_registry.json`: acceptance criteria, required evidence, current status, and blocking issues.
-- `progress.md`: lightweight human-readable notes: snapshot, completed work, decisions, commands, verification, risks, and next step.
-- `trace.jsonl`: append-only run events such as plan gate, agent spawn, tool evidence, verification, stop, merge, and handoff.
-- `X.Y-<agent>.md`: each sub-agent report.
-- `evaluator_report.md`: pass/fail evidence for high-risk, UI, release, or user-facing tasks, including testing gate evidence when implementation behavior changed.
-
-Use templates in `templates/` when no project-specific format exists.
-
-For Lite Orchestration that needs a small local artifact, use:
+Durable files under `<project>/workspace/<slug>/`. Prefer:
 
 ```bash
-python3 <skill-dir>/scripts/init_run.py --mode lite --project-root <active-project-root> --title "<task title>" --agents docs,review
+python3 <skill-dir>/scripts/init_run.py --project-root <project> --title "<title>" --with-synthesis
 ```
 
-For Full Harness, prefer the bundled initializer instead of hand-creating files:
+Then **fill** templates (empty headings ≠ plan). Stage `0` synthesis stays ready before impl tasks.
 
-```bash
-python3 <skill-dir>/scripts/init_run.py --mode full --project-root <active-project-root> --title "<task title>" --agents frontend,backend,tests
+Deep guide: read `references/spec-synthesis.md` **only when** doing Full or stuck on synthesis quality.
+Quality bar example: `references/examples/fuzzy-goal-full-harness.md`.
+
+**Document priority (Full):**
+`task_spec` > `acceptance_registry` > `run_state` > `tasks/*` > review prose.
+
+### Production State Witness (stateful behavior)
+
+Before changing a policy, gate, queue, token, generation, async callback, or UI state path,
+write `state_witness.md` (Full) or the equivalent section in the Lite plan. It must trace:
+
+- the user-visible symptom and terminal success condition;
+- the actual production call chain that produces the decision;
+- each Boolean/enum input, its producer, lifecycle, and current value in the reported path;
+- a truth table containing the real failing combination, the intended fix, and preserved
+  blocking combinations;
+- the executable test or fixture that maps to each critical row.
+
+Do not use a convenient synthetic combination merely because it makes a unit test pass.
+If the witness cannot identify the real combination, mark the task as investigation or
+blocked and add targeted logging before claiming a fix.
+
+## 3. Execution modes
+
+### Direct
+
+- No workers, no harness artifacts.
+- Do the work; run the smallest real check; summarize.
+
+### Lite
+
+- Short plan: owners, scope, outputs, verification.
+- Workers only with **disjoint** ownership and self-contained prompts.
+- Reports: compact file or short status — not essay spam.
+- Fuzzy override lives in plan / `synthesis_notes.md`, **not** a fake Full `run_state`.
+
+### Full
+
+```text
+Intake → Density/Mode → Synthesis? → State Witness? → Capability → Artifacts → DAG
+  → Workers → State → Adversarial Review → Verify → Stop? → Merge → Handoff
 ```
 
-## Context Intake
+- Manager owns state, merge, final acceptance.
+- Workers own bounded slices only.
+- `init_run --with-synthesis`: impl tasks stay `planned` until synthesis checklist done.
+- Before dispatch, validate filled specs with `validate_report.py ... --type spec --require-filled`.
+- For stateful behavior, validate that `state_witness.md` names the real call-site inputs
+  and at least one executable check covers the reported state row before implementation.
+- Run `python3 <skill-dir>/scripts/state_witness_check.py <artifact-dir>/state_witness.md --require-filled`
+  before `seal` or dispatch when the witness trigger fires.
+- After human-authored Full JSON/spec edits and before execution, run `harnessctl.py seal <artifact-dir> --reason <why>` to bind the reviewed baseline.
+- Record every real worker with `dispatch-create` immediately after spawn and advance it with `dispatch-update`; chat-only worker IDs are not resumable state.
+- Mutate run, task, and acceptance statuses through `harnessctl.py`; direct JSON edits are not accepted evidence.
+- Protected PASS uses controller-generated typed receipts such as `--evidence-file`; free-form `--evidence` is supporting context only and cannot complete a new Full run.
+- Run `harnessctl.py validate <artifact-dir>` before resume, evaluation, and final acceptance.
+- After GREEN and before final acceptance, run an adversarial call-site review. It must try
+  to find a production state combination missing from the tests. A finding reopens a new
+  RED → GREEN → REFACTOR cycle; it is not a prose footnote.
 
-Before planning:
+Capability / worktree / TDD details: load only when needed (`references/tdd-gates.md`, adapters).
 
-- Read the project `AGENTS.md`, docs, existing plans, previous ledgers, and relevant files.
-- If the user asks to continue, locate the prior artifact directory and read the previous ledger/reports before editing.
-- Check for previous sub-agent runs, reports, worktrees, or temporary resources that should be reused, closed, or left untouched.
-- For read-only Direct/Lite exploration, a lightweight existence check is enough;
-  do not load historical artifacts unless the task is resumable or depends on
-  their state.
-- If the user explicitly asked for real sub-agents, confirm the available delegation mechanism before assigning work.
-- Inspect git status before using worktrees. Do not overwrite or revert unrelated user changes.
+## 4. Worker contract (any model)
 
-## Capability Gate
+Prompt must be **self-contained**: goal, allowed scope, constraints, outputs, verify, stop, report path.
+No “as discussed above”.
 
-Before assigning agents, record what the current runtime can actually do:
-
-- Real sub-agent or delegation mechanism: available / unavailable.
-- Forked workspace or `git worktree`: available / unavailable.
-- Shell, filesystem, browser, network, MCP, and external service access.
-- Approval model for destructive, paid, publishing, permission, or production-data actions.
-- Fallback plan when real parallelism is unavailable.
-
-Use the strongest available runtime path, but keep the core protocol stable:
-
-- Codex-style runs should rely on project `AGENTS.md`, installed skills, available tools, sandbox/approval state, shell verification, and browser/MCP tools when present.
-- Claude Code-style runs may use configured subagents, foreground/background execution, worktrees, hooks, and `CLAUDE.md`/memory files when present.
-
-If real parallelism is unavailable, keep the DAG and execute stages sequentially. Do not simulate agent completion.
-
-## Decision Alignment
-
-Do not ask a question for ordinary planning ambiguity when a conservative,
-reversible default is clear. State the assumption and continue. Ask one concise
-question only when the unresolved choice changes ownership, scope, an
-irreversible action, verification strategy, or user-facing behavior; include
-the recommended default and why it is safer. Stop asking as soon as that
-decision is stable.
-
-## Spec And Stage Gate
-
-Before spawning sub-agents, define:
-
-- Goal, non-goals, constraints, acceptance criteria, and stop conditions.
-- Artifact directory.
-- Stage number and dependencies.
-- File or responsibility ownership for each sub-agent.
-- Verification expected from each sub-agent.
-- Budget for the run and each stage: time, turns/tool calls if measurable, retry count, and external cost constraints.
-- Merge order and conflict handling.
-- What the manager should do locally while agents run.
-
-Model the work as a DAG: parallel tasks share the same stage number; dependent tasks move to later stages.
-
-For full artifact mode, mirror the DAG in `run_state.json` and mirror acceptance criteria in `acceptance_registry.json`. Each task should have: `id`, `stage`, `owner`, `status`, `allowed_scope`, `dependencies`, `expected_outputs`, `verification`, `evidence`, `retry_count`, and `stop_reason`.
-
-Keep the state and memory boundary explicit:
-
-- `task_spec.md` is the local human-readable plan/spec. Update it when the agreed goal, scope, constraints, acceptance criteria, or verification strategy changes.
-- `progress.md` is the human-readable working ledger. Update it after meaningful stage, task, decision, command, or verification changes.
-- `run_state.json` is the machine-readable live state. Update `state_layers.working_state` for the current stage/task and `state_layers.session_state` for run-scoped shared decisions or assumptions.
-- `trace.jsonl` and `tdd_trace.jsonl` are append-only execution logs. Do not rewrite them to make the run look cleaner.
-- Cross-task memory does not belong in Full Harness artifacts. Record only `state_layers.memory_boundary.memory_candidates`; promote them later through an explicit memory or project-doc workflow.
-
-Use separate status vocabularies:
-
-- Run status: `intake`, `gated`, `specified`, `dispatched`, `reported`, `evaluating`, `accepted`, `handed_off`, `blocked`, `needs_decision`, `failed`.
-- Stage/task status: `planned`, `ready`, `running`, `blocked`, `verify_failed`, `passed`, `merged`, `cancelled`.
-- Acceptance status: `pending`, `pass`, `fail`, `blocked`, `scoped_out`.
-
-## Worktree Isolation
-
-For code changes that can conflict or proceed independently, prefer physical isolation with `git worktree` when the repository state allows it. Do not use worktrees for tiny edits, non-code analysis, or tasks where file ownership cannot be separated.
-
-```bash
-git worktree add -b feature/<topic>-frontend ../wt-<topic>-frontend
-git worktree add -b feature/<topic>-backend ../wt-<topic>-backend
-git worktree add -b feature/<topic>-tests ../wt-<topic>-tests
-```
-
-Use the project's own branch policy, test commands, and workflow docs over generic templates.
-
-## Testing And Review Gates
-
-Use project tests and local instructions first. Do not invent meaningless tests to satisfy process.
-
-For code behavior changes in Lite Orchestration or Full Harness:
-
-- Choose the development lane before assigning work:
-  - Bugfix Lane for bounded defects: `references/bugfix-lane.md`.
-  - Feature-Spec Lane for planned behavior changes: `references/feature-spec-lane.md`.
-- Identify the relevant test, fixture, script, smoke check, or manual verification path before implementation.
-- Choose and record a gate mode before implementation: `strict_tdd`, `test_first_evidence`, `substitute`, or `not_applicable`.
-- Use `strict_tdd` when the user, project instructions, phase gate, or assigned worker task explicitly requires TDD. Strict TDD requires RED command/result/failure reason before production code, GREEN command/result after implementation, and a refactor check after cleanup.
-- Use `test_first_evidence` for ordinary Lite/Full code behavior changes when a meaningful automated test exists or can be added at reasonable cost. The evidence must show a failing or gap-revealing test before production change, then passing verification after.
-- Use `substitute` only when a meaningful test-first path is unavailable or disproportionate. Record the no-test reason and the substitute check.
-- Use `not_applicable` only for docs-only, config-only, analysis-only, or non-behavior work.
-- Prefer wrapper-generated trace evidence for delegated TDD work. Run checks through `scripts/harness_test_run.py` when available, use `templates/tdd_trace.jsonl` as the trace format, and run `scripts/tdd_gate_check.py` before acceptance when the checker exists.
-- Use `scripts/tdd_gate_check.py --source-path <file>` for strict TDD cycles when physical file mtime evidence should corroborate RED-before-edit chronology.
-- Do not accept tests-after as TDD. If RED evidence is missing or occurs after implementation, record the broken chronology and either repair the gate, use an explicit substitute with a concrete no-test reason, or stop for a decision.
-
-For Full Harness implementation tasks:
-
-- Prefer two separate reviews when risk justifies it:
-  - Spec compliance review: checks required behavior, non-goals, missing work, and extra behavior.
-  - Code quality review: checks maintainability, scope, local conventions, error handling, and regression risk.
-- Treat review PASS/FAIL/BLOCKED as evidence for the manager, not as final acceptance.
-- Any FAIL or BLOCKED review must create a repair task, stop reason, or explicit user decision.
-
-## Sub-Agent Contract
-
-Keep sub-agent tasks concrete, bounded, and independently verifiable. Give each sub-agent disjoint file ownership or responsibility ownership.
-
-Worker prompts must be self-contained. Include the goal, allowed scope, relevant paths, constraints, expected output, verification requirement, stop conditions, and return format. Do not rely on "as discussed above" or the worker inheriting the manager's hidden context.
-
-Ask each sub-agent to return only four lines:
+Worker returns **only**:
 
 ```text
 状态：已完成 / 失败 / 需要决策
-报告：<artifact-dir>/X.Y-xxx.md
-产出：N 个文件（列出路径）
-决策点：[如有，一句话描述]
+报告：<path>
+产出：N 个文件（路径）
+决策点：一句话或无
 ```
 
-For larger findings, require a report file under `<artifact-dir>/` instead of pasting the report into chat.
+Implementation reports need gate mode + RED/GREEN or substitute (+ no-test reason).
+`已完成` ≠ final PASS — manager/evaluator accepts on evidence.
 
-Each report should include: goal, files touched, commands run, evidence, unresolved risks, assumptions that affect merging, and any stub/TODO/mock/unverified path.
+Optional: `python3 <skill-dir>/scripts/validate_report.py <report> --type subagent`
 
-Each implementation report must include `Test-First Or Substitute Verification` with gate mode and RED/GREEN or substitute fields. The manager must reject a code behavior report that omits this record or uses `not_applicable` without a non-code reason.
+## 5. Verification & stop (precision)
 
-When a sub-agent returns a report path, validate its structure before relying on it:
+**Accept only with external evidence:** tests, typecheck, build, logs, browser, API readback. In Full mode, retain the checked output/report inside the artifact and pass it through `--evidence-file` so the controller records its digest and transaction receipt.
+Reject stubs/TODOs/mocks as “done”. UI paths need browser/screenshot when available.
+
+For user-visible state/UI bugs, separate evidence tiers:
+
+1. **Policy tier** — the decision function returns the intended result for the witness rows.
+2. **Flow tier** — the real producer-to-store/queue/token path consumes that result and
+   reaches the expected cache/render/terminal state.
+3. **User-visible tier** — browser, screenshot, device, or controlled fixture confirms the
+   reported symptom is gone.
+
+Policy-tier evidence alone may support a mitigation, but cannot close a user-visible
+acceptance criterion. If a higher tier is unavailable, keep the criterion `blocked` and
+state the exact substitute boundary.
+
+**Manager re-verify (required):** before PASS, the manager (or evaluator) must **re-run or re-check** the critical command/diff themselves. Copying a worker’s “已完成” or a self-written `VERIFY_OK` string is **not** evidence. For docs, check concrete content (not only heading presence).
+
+**`score_harness` is never product acceptance.** It only rates plan/harness quality. Synthesis “aligned” requires filled contracts + human-meaningful rules; a high score alone does not finish the user task.
+
+**Accept rules must be semantic when risk matters:** prefer “contains concrete policy defaults (retry/timeout numbers)” over substring-only `## Policy` checks that hollow text can pass.
+
+**Stop** (do not thrash): scope explosion; same failure twice without new diagnosis; destructive/prod/paid ops; ownership clash; missing env; budget blown. Record `stop_reason` + decision needed. After synthesis passes, clear stale `blocked_until_synthesis` on ready impl tasks.
+
+**High-impact** (prod data, publish, permissions): stop for confirmation — not a multi-agent trigger by itself.
+
+## 6. Token discipline (smart, not cheap)
+
+| Do | Don't |
+|----|--------|
+| Decide density in ≤10 lines of thought | Paste full Full-harness templates into chat |
+| **Direct:** this file only (0 extra refs unless blocked) | Read all of `references/` for a typo |
+| Load **one** reference when blocked | Load every adapter + eval_cases by default |
+| Keep Full state on disk; chat = status | Dump entire `run_state` into every message |
+| One alignment question with recommended default | Interrogate the user for a perfect brief |
+| Score harness only when judging plan quality | Equate high `score_harness` with product done |
+| After Full `init_run`, fill or delete empty skeletons | Leave blank `progress`/template shells that drag integrity |
 
 ```bash
-python3 <skill-dir>/scripts/validate_report.py <artifact-dir>/X.Y-xxx.md --type subagent
+# Optional: score a Full artifact dir (plan quality ≠ product success)
+python3 <skill-dir>/scripts/score_harness.py --fixture <artifact-dir> --pretty
 ```
 
-After reading the report, the manager must update `run_state.json` or `progress.md` with status and evidence. A sub-agent status of `已完成` only means the bounded slice is ready for manager/evaluator review; it is not final acceptance.
+## 7. Progressive reference load
 
-## Verification
+| Situation | Read |
+|-----------|------|
+| Fuzzy / fake-success design | `references/spec-synthesis.md` |
+| Density edge cases | `references/proportionality.md` |
+| TDD / RED-GREEN chronology | `references/tdd-gates.md` |
+| Roles manager/worker/evaluator/state witness | `references/roles.md` |
+| Stateful/UI/async bug or policy gate | `references/state-witness.md` |
+| Stop / rollback detail | `references/stop-conditions.md` |
+| Bugfix vs feature lane | `references/bugfix-lane.md` / `feature-spec-lane.md` |
+| Protocol depth | `references/harness-protocol.md` |
+| Codex / Claude specifics | `adapters/codex.md` / `adapters/claude-code.md` |
+| Universal runtime notes | `adapters/universal.md` |
+| Cost/model routing | `references/model-routing.md` + runtime adapter |
+| Eval / regression of this skill | `references/eval_cases.md` |
 
-Sub-agents may report evidence, but the manager or an evaluator owns final acceptance.
+**Default:** this file + maybe one reference. That is enough for most runs.
 
-Prefer external evidence over self-assessment:
+## 8. Manager handoff shape (end of turn)
 
-- Machine checks: tests, typecheck, lint, build, schema validation, data readback.
-- Environment checks: browser interaction, screenshots, API round trips, database state, logs.
-- Independent evaluation: evaluator agent, focused review, CI, or a strict rubric.
-
-Reject outputs that package stubs, TODOs, mocks, or untested critical paths as completion. For Web/UI work, browser-level verification is required when a browser is available and the UI path matters.
-
-Before claiming completion, the manager must inspect the relevant diff or output, run or review the freshest available verification evidence, and state any unverified paths. Sub-agent self-assessment is never enough.
-
-Run a completion-confidence loop before the final claim: state the completion claim, inspect the freshest available evidence, identify missing checks, stubs, TODOs, mocks, stale reports, and unverified critical paths, then assign `high`, `medium`, `low`, or `blocked` confidence.
-
-Confidence is not a substitute for evidence. `high` requires required evidence to pass with no material unverified path. `medium` is allowed only when remaining gaps are non-critical and disclosed. `low` or `blocked` means the manager must not claim completion; run the missing check, create a repair or decision item, or hand off as blocked.
-
-Keep this loop proportional to the selected mode. Direct mode may disclose it only in the final response. Lite Orchestration may record it as compact verification notes. Full Harness should map it to acceptance records, trace, progress, and evaluator output when those artifacts exist. Do not create Full artifacts solely to record confidence.
-
-For full artifact mode:
-
-- Every acceptance criterion in `acceptance_registry.json` must be `pass`, `blocked`, or `scoped_out` before final handoff.
-- Final success requires no `fail` or `blocked` acceptance item.
-- Evaluator reports must use `PASS`, `FAIL`, or `BLOCKED`.
-- A `FAIL` or `BLOCKED` evaluator result must update the next stage, stop reason, or required fix list.
-
-## Stop And Rollback
-
-Stop and re-plan instead of adding more agents when:
-
-- Scope expands materially beyond the spec.
-- The same stage fails verification twice without a new diagnosis.
-- A sub-agent needs destructive, publishing, permission, paid, or production-data operations.
-- File ownership conflicts between agents.
-- The task depends on unavailable credentials, services, or environments.
-- Multiple viable paths remain and the choice affects product or maintenance direction.
-- The current stage exceeds its budget or would consume more context/time/tool calls without new evidence.
-
-Preserve rollback paths such as git diff, worktree isolation, backups, dry-runs, previews, readback checks, or old config values.
-
-When stopping, record `stop_reason`, current evidence, changed files, rollback path, and the exact decision needed. Stopping with a clear ledger is successful supervision, not failure.
-
-## Merge And Handoff
-
-Merge only after reading reports and checking conflicts. Keep the manager context small: receive status, paths, short decisions, and verification results.
-
-End with:
-
-- What changed.
-- Which reports and artifacts matter.
-- Verification evidence.
-- Decisions made.
-- Residual risks.
-- Next step or handoff state.
-
-## Reference Loading
-
-- Read `references/closed-loop-pattern.md` when designing or revising the orchestration loop.
-- Read `references/model-routing.md` only when the active runtime exposes model
-  or reasoning-effort selection for sub-agents.
-- Read `references/harness-protocol.md` when deciding which control layers should be hard protocol versus lightweight guidance.
-- Read `references/state-memory-boundary.md` when deciding whether information belongs in `task_spec.md`, `progress.md`, `run_state.json`, `trace.jsonl`, or cross-task memory.
-- Read `references/superpowers-integration.md` when deciding how to borrow TDD, parallel-agent, review, worktree, or verification methods without letting another workflow replace this skill's mode router.
-- Read `references/bugfix-lane.md` for bounded defects that need Investigate -> RED -> Fix -> Audit -> Quality Gate -> Done.
-- Read `references/feature-spec-lane.md` for planned features that need Spec -> optional isolation -> task-level TDD -> review gates -> E2E/program verification.
-- Read `references/tdd-gates.md` when a task changes code behavior, the user explicitly asks for TDD, or a worker report needs TDD/substitute verification acceptance.
-- Read `references/roles.md` when deciding whether to spawn explorers, workers, evaluators, or mergers.
-- Read `references/stop-conditions.md` when a task has high impact, ambiguous scope, repeated failures, or external side effects.
-- Read `references/eval_cases.md` when testing whether this skill triggers and behaves correctly.
-- Read `adapters/codex.md` or `adapters/claude-code.md` when the target runtime is known and runtime-specific controls matter.
-- Use `scripts/init_run.py` to create Lite or Full artifacts, `scripts/status.py` to print a compact status from `run_state.json`, `scripts/validate_report.py` to check reports, `scripts/harness_test_run.py` to generate wrapper-owned TDD trace events, and `scripts/tdd_gate_check.py` to validate `tdd_trace.jsonl` chronology when those runtime files are present.
-- Use `templates/lite_plan.md`, `templates/lite_review.md`, `templates/task_spec.md`, `templates/progress_ledger.md`, `templates/subagent_task.md`, `templates/subagent_report.md`, and `templates/evaluator_report.md` when scripts are not suitable.
-- Use `templates/tdd_trace.jsonl` as the starting trace format for TDD runtime evidence when present.
-
-Load references by task shape, not as a bundle: TDD only for code behavior,
-worktree only for conflicting writes or rollback risk, browser checks only for
-user-facing UI, and the Superpowers reference only when a supporting method is
-actually selected.
+- Mode used (Direct / Lite / Full) + why (one line)
+- What changed / evidence
+- Residual risk + next step
+If Full: point to artifact paths, not paste everything.
 
 ---
 
-*Agent Dispatch Harness v5.11.0 | 2026-07-13*
+*Agent Reliability Harness v7.2.0 | 2026-07-15*

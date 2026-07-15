@@ -19,7 +19,24 @@ Allowed results: PASS / FAIL / BLOCKED
 - Substitute reason checked:
 - Review gate evidence checked:
 
+## Production State Witness Checked
+
+- Witness path:
+- Actual call chain verified:
+- State producers/lifecycle verified:
+- Failing state row covered:
+- Preserved blocking row covered:
+- Adversarial call-site review result:
+- Missing or unreachable state combinations:
+
 ## Evidence
+
+## Verification Tier
+
+- Policy tier:
+- Flow tier:
+- User-visible tier:
+- Exact blocked boundary, if any:
 
 ## Blocking Issues
 
