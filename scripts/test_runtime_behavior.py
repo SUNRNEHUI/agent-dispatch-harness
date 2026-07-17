@@ -233,6 +233,23 @@ def test_runtime_package_contains_state_witness_runtime() -> None:
         shutil.rmtree(temp)
 
 
+def test_trigger_shortcuts_route_without_forcing_full() -> None:
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8").lower()
+    default_prompt = (ROOT / "agents" / "openai.yaml").read_text(encoding="utf-8").lower()
+    master_prompt = (ROOT / "master-prompt.md").read_text(encoding="utf-8").lower()
+
+    for trigger in ("你是主 agent", "写一个 harness", "写一个harness"):
+        assert trigger in skill
+        assert trigger in default_prompt
+        assert trigger in master_prompt
+    for text in (default_prompt, master_prompt):
+        assert "multi-agent dispatch" in text
+        assert "you are the main agent" in text
+        assert "do not force full" in text
+        for mode in ("direct", "lite", "full"):
+            assert mode in text
+
+
 def test_routing_and_superpowers_policies_are_present() -> None:
     routing = (ROOT / "references" / "model-routing.md").read_text(encoding="utf-8")
     adapter = (ROOT / "adapters" / "codex.md").read_text(encoding="utf-8")
@@ -252,6 +269,7 @@ def main() -> int:
         test_integrity_breaker_prevents_high_confidence,
         test_negative_validator_and_package_check,
         test_runtime_package_contains_state_witness_runtime,
+        test_trigger_shortcuts_route_without_forcing_full,
         test_routing_and_superpowers_policies_are_present,
     ]
     for test in tests:

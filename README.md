@@ -46,6 +46,7 @@ Sub-agents are used only for bounded execution, investigation, review, or evalua
 | **Full** | The task is long, risky, resumable, parallel, evaluator-heavy, or benefits from worktree isolation. | The manager runs the full harness with capability records, state files, acceptance registry, trace, reports, and verification gates. |
 
 Explicit multi-agent wording authorizes mode selection. It does not automatically require multiple workers.
+The shortcut phrases activate the density router; they do not force Full or multi-agent dispatch.
 
 ---
 
@@ -53,6 +54,8 @@ Explicit multi-agent wording authorizes mode selection. It does not automaticall
 
 Use this skill when the user explicitly asks for:
 
+- saying "You are the main agent" or "write a harness" to activate the density router
+- writing a harness to solve this problem
 - multi-agent work
 - sub-agents
 - delegated agent work

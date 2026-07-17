@@ -1,9 +1,11 @@
 ---
 name: agent-reliability-harness
 description: >
-  Use when a task explicitly requests multi-agent, sub-agent, DAG, worktree, or parallel
-  delegation; when a vague or improvement-shaped goal is easy to fake-complete; or when
-  long, resumable, high-risk work needs durable evidence and acceptance across sessions.
+  Use when the user says "你是主 agent" ("你是主agent") or "写一个 harness" ("写一个harness"),
+  asks to "write a harness to solve this problem" ("写一个 harness 来解决这个问题"), or explicitly
+  requests multi-agent dispatch, sub-agent, DAG, worktree, or parallel delegation; when a vague or
+  improvement-shaped goal is easy to fake-complete; or when long, resumable, high-risk work needs
+  durable evidence and acceptance across sessions.
   Former names: Agent Dispatch Harness; Multi-Agent Dispatcher.
 ---
 
@@ -11,6 +13,8 @@ description: >
 
 **What this is:** a runtime-agnostic **task OS** — precise execution with intelligent
 proportional process. Not “always multi-agent”, not “always write a big harness”.
+
+The shortcut phrases activate the density router only; they do not force Full or multi-agent dispatch.
 
 **Works on:** Codex, Claude Code, Grok, and any agent that can read files, run
 commands, and follow a short protocol. Runtime adapters are optional polish, not required.
