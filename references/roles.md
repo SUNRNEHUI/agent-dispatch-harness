@@ -7,6 +7,10 @@ Use these role boundaries when assigning multi-agent work.
 - Owns spec, DAG, artifact directory, state, merge, and final acceptance.
 - Does not outsource the immediate critical-path task if the next local step depends on it.
 - Reviews reports before merging and rejects unverified completion.
+- On session entry, resumes the unique active Full run before edits and adopts the returned
+  actor/epoch fencing token.
+- Checkpoints explicit next action and pending verification at durable boundaries; on clean
+  exit, marks continuation ready for handoff.
 
 ## Explorer
 

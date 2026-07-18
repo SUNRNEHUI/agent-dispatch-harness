@@ -1,6 +1,6 @@
 # Harness Protocol Reference
 
-This reference defines the v7.2 core protocol. It is intentionally separate from any one agent runtime. Runtime adapters may become thinner as models improve, but the manager still needs a durable protocol for state, evidence, budget, and final acceptance.
+This reference defines the v7.4 core protocol. It is intentionally separate from any one agent runtime. Runtime adapters may become thinner as models improve, but the manager still needs a durable protocol for state, continuation ownership, evidence, budget, and final acceptance.
 
 ## Protocol Goal
 
@@ -87,6 +87,22 @@ missing version is an integrity failure, not a hint to guess a migration.
 - evidence path
 - next action
 
+### Continuation Record
+
+The additive `continuation` record is independent of the top-level run lifecycle. A
+mid-run runtime switch does not move the run to terminal `HANDED_OFF`.
+
+- protocol and status: `unclaimed`, `active`, or `ready`;
+- current owner actor ID, runtime, monotonically increasing epoch, and claim time;
+- previous owner and takeover count;
+- latest checkpoint ID/sequence, current task, literal next action, pending verification,
+  and repository snapshot;
+- last resume actor/runtime/reason and whether the takeover was forced.
+
+The owner epoch is a fencing token, not metadata. Once a run is claimed, all state-changing
+controller calls must match both actor ID and epoch. A later session may reuse an actor name,
+but a stale process holding an earlier epoch still cannot write.
+
 ### Model Route Record
 
 - runtime identity established by the active adapter, not executable discovery alone
@@ -166,6 +182,10 @@ After `init_run.py --mode full`, use the narrow control surface instead of hand-
 run, task, or acceptance statuses:
 
 ```bash
+python3 <skill-dir>/scripts/harnessctl.py discover <project-root>
+python3 <skill-dir>/scripts/harnessctl.py resume <project-root> --runtime grok --actor-id <unique-session-id> --takeover-reason "previous runtime interrupted"
+python3 <skill-dir>/scripts/harnessctl.py checkpoint <project-root> --runtime grok --actor-id <actor> --owner-epoch <epoch> --current-task 1.1 --next-action "run focused tests" --reason "verified boundary"
+python3 <skill-dir>/scripts/harnessctl.py handoff <project-root> --actor-id <actor> --owner-epoch <epoch> --next-action "run focused tests" --reason "clean runtime switch"
 python3 <skill-dir>/scripts/harnessctl.py validate <artifact-dir>
 python3 <skill-dir>/scripts/harnessctl.py seal <artifact-dir> --reason "reviewed synthesis baseline"
 python3 <skill-dir>/scripts/harnessctl.py dispatch-create <artifact-dir> --worker-id <runtime-worker-id> --task-id 1.1 --contract-path tasks/1.1-worker.md --report-path 1.1-worker-report.md --runtime codex --profile main --requested-model gpt-5.6-luna --reasoning-effort xhigh --route-reason "default high-frequency manager"
@@ -182,6 +202,21 @@ python3 <skill-dir>/scripts/harnessctl.py run-set <artifact-dir> --status accept
 python3 <skill-dir>/scripts/harnessctl.py recover <artifact-dir>
 ```
 
+`resume` is the replacement runtime entry gate. From a project root it discovers exactly
+one non-terminal Full run, takes a coordination lock, recovers incomplete journal entries,
+validates all canonical state and evidence chains, then commits a new owner epoch and emits
+a resume packet. Zero active runs, multiple active runs, corrupt state, or failed recovery
+leaves ownership unchanged. Terminal runs are never auto-selected.
+
+The packet includes artifact/project paths, active tasks, blockers, required reads, recorded
+next action, pending verification, current/previous owner, and repository drift. A content
+fingerprint distinguishes pre-existing dirty work from changes made after checkpoint. The
+harness-owned `workspace/**` artifact is excluded from this project drift calculation.
+
+After claim, append `--actor-id <packet owner.actor_id> --owner-epoch <packet owner.epoch>`
+to every mutating command shown above. Read-only `discover`, `validate`, and `status.py` do
+not require ownership.
+
 The controller validates the current and candidate documents, rejects illegal transitions
 or unverified PASS states, writes state atomically under an artifact lock, and journals
 started/committed transaction events. `validate` also rejects malformed JSONL, empty
@@ -190,6 +225,11 @@ chat-only dispatches, canonical-state digest drift, evidence receipt/digest mism
 committed or aborted terminal event only when the canonical state matches one of those digests.
 
 `seal` is the explicit pre-dispatch boundary for reviewed human-authored state. It is allowed only before execution and does not make prose correct; it records that the manager intentionally accepts the current structured baseline. New Full runs treat free-form `--evidence` as non-qualifying legacy context. `--evidence-file` hashes a non-empty artifact file and binds that receipt to the committed transition; a worker report still needs manager review and the relevant testing/evaluator gate.
+
+Cross-runtime continuation transfers durable, explicit state only. It does not transfer
+hidden chain-of-thought, provider-internal chat/session state, credentials, or an in-flight
+external side effect. No provider quota callback is assumed: automatic takeover begins when
+the replacement runtime is launched and executes `resume`.
 
 Before dispatch, validate human-authored Full specs semantically:
 

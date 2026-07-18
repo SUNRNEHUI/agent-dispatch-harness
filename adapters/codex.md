@@ -13,6 +13,21 @@ Use the most specific instruction source available:
 
 Project rules override broader rules when they conflict. The manager should read the relevant files before editing and record any protocol-relevant constraints in the trace.
 
+## Full Run Resume And Checkpoint
+
+At the start of a replacement Codex session, before editing, run `harnessctl.py resume` from
+the project root with `--runtime codex` and a unique session actor ID. If the packet reports
+workspace drift, inspect the diff before continuing its recorded next action. Carry the
+returned owner epoch on every mutating controller command.
+
+Checkpoint after each verified boundary and before context compaction, quota pressure, or a
+long external operation. Record the literal next action and pending verification, not a
+generic "continue work". When Codex can exit cleanly, run `handoff`; if it stops abruptly,
+the replacement runtime uses a takeover reason and claims a new epoch.
+
+Codex cannot use this file to launch another provider after quota exhaustion. The durable
+artifact makes takeover automatic once that replacement runtime is started.
+
 ## Mode Selection Gate
 
 In Codex, skill loading and actual dispatch are separate decisions. If the user mentions multi-agent work for a tiny edit, use the skill to decide that dispatch is unnecessary, then complete the task directly. Do not spawn workers, create worktrees, or initialize artifact directories unless delegation is justified.

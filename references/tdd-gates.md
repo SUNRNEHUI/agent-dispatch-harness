@@ -132,6 +132,8 @@ python3 scripts/harness_test_run.py \
   --reason "bugfix requires RED before implementation" \
   --phase RED \
   --run-state <artifact-dir>/run_state.json \
+  --actor-id <continuation-owner-if-claimed> \
+  --owner-epoch <continuation-epoch-if-claimed> \
   -- pytest path/to/test.py
 ```
 
@@ -141,6 +143,11 @@ exit code, stdout/stderr tails, retry count, and trace path. This current cycle
 context is the lightweight failure scene to pass between manager and workers;
 do not move entire workspace telemetry between agents when the failure scene is
 enough.
+
+For Full mode, the context update uses the same artifact lock and before/after digest journal
+as `harnessctl`; it must not invalidate a sealed run. Once continuation ownership is active,
+the wrapper checks actor ID and owner epoch before executing the command and again before
+committing context. Omit these flags only while the continuation is still unclaimed.
 
 For substitute checks, pass `--no-test-reason` so the trace records why a
 test-first path was not used.

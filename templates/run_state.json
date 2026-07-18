@@ -8,6 +8,45 @@
   "artifact_dir": "",
   "trace_path": "trace.jsonl",
   "tdd_trace_path": "tdd_trace.jsonl",
+  "continuation": {
+    "protocol": "handoff-v1",
+    "status": "unclaimed",
+    "owner": {
+      "actor_id": "",
+      "runtime": "",
+      "epoch": 0,
+      "claimed_at": ""
+    },
+    "previous_owner": {},
+    "takeover_count": 0,
+    "checkpoint": {
+      "id": "",
+      "sequence": 0,
+      "checkpointed_at": "",
+      "actor_id": "",
+      "runtime": "",
+      "reason": "run initialized",
+      "current_task": "",
+      "next_action": "Inspect task_spec.md and define the next ready task",
+      "pending_verification": [],
+      "repository": {
+        "root": "",
+        "cwd": "",
+        "branch": "",
+        "head": "",
+        "dirty_paths": [],
+        "dirty_entries": {},
+        "worktree_digest": ""
+      }
+    },
+    "last_resume": {
+      "resumed_at": "",
+      "actor_id": "",
+      "runtime": "",
+      "takeover_reason": "",
+      "forced": false
+    }
+  },
   "state_witness": {
     "required": false,
     "path": "",

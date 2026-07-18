@@ -1,0 +1,19 @@
+# OPTIONAL — only if you later add a cheaper second model.
+# Sealed harness defaults use grok-api (4.5) for every profile, including sub-agents.
+# This fragment is NOT required for normal Grok 4.5-only installs.
+#
+# Merge into ~/.grok-api/config.toml or ~/.grok/config.toml, then either:
+#   export HARNESS_GROK_FAST_MODEL=grok-fast
+#   python3 scripts/model_router.py --runtime grok --simple --mechanically-verifiable --allow-env-override
+# or change GROK_MODEL_PROFILES.fast deliberately in a fork.
+
+[model.grok-fast]
+model = "CHANGE_ME_CHEAP_UPSTREAM_ID"
+base_url = "https://okmcode.com/v1"
+name = "Grok Fast (optional cheap worker)"
+env_key = "XAI_API_KEY"
+api_backend = "responses"
+
+# Optional explore routing once the alias exists:
+# [subagents.models]
+# explore = "grok-fast"

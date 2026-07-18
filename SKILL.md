@@ -62,16 +62,18 @@ Answer in order. **Stop at the first match.**
 Model choice never justifies dispatch. Finish a tiny task in the current thread; use a
 cheaper worker only when repeated/parallel work outweighs coordination cost.
 
-| Profile | Model / effort | Route |
-|---|---|---|
-| `fast` | Luna `medium` | simple + mechanically verifiable |
-| `main` | Luna `xhigh` | default high-frequency manager/executor |
-| `planner` | Sol `high` | fuzzy goals, planning, harness synthesis |
-| `critical_reviewer` | Sol `xhigh` | high risk, conflict, two validation failures |
+| Profile | Codex (default) | Grok | Route |
+|---|---|---|---|
+| `fast` | Luna `medium` | `grok-api` `low` | simple + mechanically verifiable |
+| `main` | Luna `xhigh` | `grok-api` `high` | default high-frequency manager/executor |
+| `planner` | Sol `high` | `grok-api` `high` | fuzzy goals, planning, harness synthesis |
+| `critical_reviewer` | Sol `xhigh` | `grok-api` `xhigh` | high risk, conflict, two validation failures |
 
-Terra is not used by this Codex policy. Run `scripts/model_router.py` when uncertain. Persist
-the runtime/profile/model/reason in every real Full dispatch. Deep rules and CLI:
-`references/model-routing.md`.
+Terra is not used by the Codex policy. Grok defaults all profiles to `grok-api` when that
+is the only configured model. Optional cheaper workers are opt-in, not sealed defaults.
+Run `scripts/model_router.py --runtime codex|grok` when uncertain. Persist the
+runtime/profile/model/reason in every real Full dispatch. Deep rules and CLI:
+`references/model-routing.md` and the active runtime adapter.
 
 ## 2. Spec Synthesis (fuzzy → executable)
 
@@ -152,6 +154,7 @@ Intake → Density/Mode → Synthesis? → State Witness? → Capability → Art
 - After human-authored Full JSON/spec edits and before execution, run `harnessctl.py seal <artifact-dir> --reason <why>` to bind the reviewed baseline.
 - Record every real worker with `dispatch-create` immediately after spawn and advance it with `dispatch-update`; chat-only worker IDs are not resumable state.
 - Mutate run, task, and acceptance statuses through `harnessctl.py`; direct JSON edits are not accepted evidence.
+- When a completed or reopened task, or a passed criterion, must point at a newly recaptured artifact, use `harnessctl.py task-refresh` or `acceptance-refresh` to replace receipts by path; never overwrite a receipt-backed file without refreshing its transaction.
 - Protected PASS uses controller-generated typed receipts such as `--evidence-file`; free-form `--evidence` is supporting context only and cannot complete a new Full run.
 - Run `harnessctl.py validate <artifact-dir>` before resume, evaluation, and final acceptance.
 - After GREEN and before final acceptance, run an adversarial call-site review. It must try
@@ -159,6 +162,38 @@ Intake → Density/Mode → Synthesis? → State Witness? → Capability → Art
   RED → GREEN → REFACTOR cycle; it is not a prose footnote.
 
 Capability / worktree / TDD details: load only when needed (`references/tdd-gates.md`, adapters).
+
+### Automatic cross-runtime continuation (Full)
+
+At the start of a replacement Codex/Grok session, before editing project files, run:
+
+```bash
+python3 <skill-dir>/scripts/harnessctl.py resume <project-root> \
+  --runtime <codex|grok> --actor-id <unique-session-id> \
+  --takeover-reason "previous runtime interrupted"
+```
+
+`resume` discovers the unique active Full run, recovers incomplete transactions, validates
+the artifact, atomically transfers ownership, and prints a resume packet. Read every
+`required_reads` entry. If `workspace_drift=true`, inspect `changed_paths` and reconcile the
+diff before following `recorded_next_action`.
+
+Every later mutating `harnessctl` call must carry the packet's `owner.actor_id` and
+`owner.epoch` as `--actor-id` and `--owner-epoch`. This fencing prevents a stale process,
+including one reusing an old actor name, from writing after takeover.
+
+Checkpoint after each verified boundary and before a likely quota/context interruption:
+
+```bash
+python3 <skill-dir>/scripts/harnessctl.py checkpoint <project-root> \
+  --runtime <runtime> --actor-id <actor> --owner-epoch <epoch> \
+  --current-task <id> --next-action "<literal next action>" --reason "<why now>"
+```
+
+Use `handoff` when the source runtime can leave cleanly. Abrupt takeover does not require
+the old chat or an artifact path, but it cannot migrate hidden reasoning, provider-internal
+session state, or an in-flight external side effect. The harness does not receive provider
+quota callbacks; takeover begins when the replacement runtime is launched and runs `resume`.
 
 ## 4. Worker contract (any model)
 
@@ -235,7 +270,7 @@ python3 <skill-dir>/scripts/score_harness.py --fixture <artifact-dir> --pretty
 | Stop / rollback detail | `references/stop-conditions.md` |
 | Bugfix vs feature lane | `references/bugfix-lane.md` / `feature-spec-lane.md` |
 | Protocol depth | `references/harness-protocol.md` |
-| Codex / Claude specifics | `adapters/codex.md` / `adapters/claude-code.md` |
+| Codex / Grok / Claude specifics | `adapters/codex.md` / `adapters/grok.md` / `adapters/claude-code.md` |
 | Universal runtime notes | `adapters/universal.md` |
 | Cost/model routing | `references/model-routing.md` + runtime adapter |
 | Eval / regression of this skill | `references/eval_cases.md` |
@@ -251,4 +286,4 @@ If Full: point to artifact paths, not paste everything.
 
 ---
 
-*Agent Reliability Harness v7.2.0 | 2026-07-15*
+*Agent Reliability Harness v7.4.0 | 2026-07-18*

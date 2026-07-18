@@ -7,12 +7,36 @@ from __future__ import annotations
 SCHEMA_VERSION = 1
 MODEL_ROUTING_POLICY = "cost-aware-v1"
 AGENT_PROFILES = {"fast", "main", "planner", "critical_reviewer"}
+SUPPORTED_MODEL_RUNTIMES = {"codex", "grok"}
 CODEX_MODEL_PROFILES = {
     "fast": {"model": "gpt-5.6-luna", "reasoning_effort": "medium"},
     "main": {"model": "gpt-5.6-luna", "reasoning_effort": "xhigh"},
     "planner": {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
     "critical_reviewer": {"model": "gpt-5.6-sol", "reasoning_effort": "xhigh"},
 }
+GROK_MODEL_PROFILES = {
+    "fast": {"model": "grok-api", "reasoning_effort": "low"},
+    "main": {"model": "grok-api", "reasoning_effort": "high"},
+    "planner": {"model": "grok-api", "reasoning_effort": "high"},
+    "critical_reviewer": {"model": "grok-api", "reasoning_effort": "xhigh"},
+}
+RUNTIME_MODEL_PROFILES = {
+    "codex": CODEX_MODEL_PROFILES,
+    "grok": GROK_MODEL_PROFILES,
+}
+
+
+def model_profiles_for(runtime: str) -> dict[str, dict[str, str]] | None:
+    """Return the sealed profile map for a runtime, if one exists."""
+    profiles = RUNTIME_MODEL_PROFILES.get((runtime or "").strip().casefold())
+    if profiles is None:
+        return None
+    return {name: dict(config) for name, config in profiles.items()}
+
+
+CONTINUATION_PROTOCOL = "handoff-v1"
+CONTINUATION_STATUSES = {"unclaimed", "active", "ready"}
+TERMINAL_RUN_STATUSES = {"accepted", "handed_off", "failed"}
 
 RUN_STATUSES = {
     "intake",

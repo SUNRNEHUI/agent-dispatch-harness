@@ -85,4 +85,4 @@ Full: artifact paths, not full JSON dumps.
 
 ---
 
-*Master Prompt v7.2.0 | 2026-07-15*
+*Master Prompt v7.4.0 | 2026-07-18*

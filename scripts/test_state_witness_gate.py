@@ -148,7 +148,7 @@ class StateWitnessGateTests(unittest.TestCase):
         self.assertEqual(specified.returncode, 0, specified.stdout + specified.stderr)
         dispatched = run("python3", "scripts/harnessctl.py", "run-set", str(artifact), "--status", "dispatched")
         self.assertNotEqual(dispatched.returncode, 0, dispatched.stdout + dispatched.stderr)
-        self.assertIn("sealed baseline", dispatched.stdout)
+        self.assertIn("sealed baseline", dispatched.stdout + dispatched.stderr)
 
     def test_stateful_validate_rejects_unfilled_witness(self) -> None:
         artifact = self.artifact("stateful validation", state_witness=True)
@@ -232,7 +232,7 @@ class StateWitnessGateTests(unittest.TestCase):
             "state_witness.md",
         )
         self.assertNotEqual(reviewed.returncode, 0, reviewed.stdout + reviewed.stderr)
-        self.assertIn("below required user_visible", reviewed.stdout)
+        self.assertIn("below required user_visible", reviewed.stdout + reviewed.stderr)
 
     def test_sealed_witness_digest_rejects_post_seal_mutation(self) -> None:
         artifact = self.artifact("sealed mutation", state_witness=True)
@@ -263,7 +263,7 @@ class StateWitnessGateTests(unittest.TestCase):
             "state_witness.md",
         )
         self.assertNotEqual(reviewed.returncode, 0, reviewed.stdout + reviewed.stderr)
-        self.assertIn("state_witness.md", reviewed.stdout)
+        self.assertIn("state_witness.md", reviewed.stdout + reviewed.stderr)
 
     def test_seal_rejects_required_but_unverified_witness(self) -> None:
         artifact = self.artifact(state_witness=True)

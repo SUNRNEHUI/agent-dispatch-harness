@@ -214,6 +214,13 @@ def test_negative_validator_and_package_check() -> None:
         result = run(["python3", "scripts/package_skill.py", "--check", str(package_dir)], check=False)
         assert result.returncode != 0
         assert "extra in install: EXTRA" in result.stdout
+        (package_dir / "EXTRA").unlink()
+        (package_dir / "workspace" / "preserved-run").mkdir(parents=True)
+        (package_dir / "workspace" / "preserved-run" / "run_state.json").write_text(
+            "{}\n", encoding="utf-8"
+        )
+        result = run(["python3", "scripts/package_skill.py", "--check", str(package_dir)], check=False)
+        assert result.returncode == 0, result.stdout + result.stderr
     finally:
         shutil.rmtree(temp)
 
@@ -229,6 +236,29 @@ def test_runtime_package_contains_state_witness_runtime() -> None:
             "templates/state_witness.md",
         ):
             assert (package_dir / relative).is_file(), relative
+    finally:
+        shutil.rmtree(temp)
+
+
+def test_parallel_package_checks_use_isolated_temp_dirs() -> None:
+    temp = Path(tempfile.mkdtemp(prefix="adh-test-parallel-package-"))
+    try:
+        package_dir = temp / "pkg"
+        run(["python3", "scripts/package_skill.py", "--output", str(package_dir), "--force"])
+        command = ["python3", "scripts/package_skill.py", "--check", str(package_dir)]
+        processes = [
+            subprocess.Popen(
+                command,
+                cwd=ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            for _ in range(8)
+        ]
+        results = [process.communicate() + (process.returncode,) for process in processes]
+        failures = [stdout + stderr for stdout, stderr, returncode in results if returncode]
+        assert not failures, "\n".join(failures)
     finally:
         shutil.rmtree(temp)
 
@@ -269,6 +299,7 @@ def main() -> int:
         test_integrity_breaker_prevents_high_confidence,
         test_negative_validator_and_package_check,
         test_runtime_package_contains_state_witness_runtime,
+        test_parallel_package_checks_use_isolated_temp_dirs,
         test_trigger_shortcuts_route_without_forcing_full,
         test_routing_and_superpowers_policies_are_present,
     ]

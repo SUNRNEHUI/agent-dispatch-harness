@@ -7,6 +7,8 @@ import argparse
 import hashlib
 import json
 import re
+import subprocess
+import sys
 import tempfile
 import uuid
 from copy import deepcopy
@@ -18,7 +20,7 @@ from harness_schema import (
     ACCEPTANCE_STATUSES,
     ACCEPTANCE_TRANSITIONS,
     AGENT_PROFILES,
-    CODEX_MODEL_PROFILES,
+    CONTINUATION_PROTOCOL,
     DISPATCH_STATUSES,
     DISPATCH_TRANSITIONS,
     EVIDENCE_POLICY,
@@ -27,12 +29,17 @@ from harness_schema import (
     RUN_TRANSITIONS,
     TASK_STATUSES,
     TASK_TRANSITIONS,
+    TERMINAL_RUN_STATUSES,
     VERIFICATION_TIERS,
+    model_profiles_for,
 )
 from runtime_state import append_jsonl, locked, mutate_json
 from state_witness_check import validate as validate_state_witness
 from validate_report import validate_acceptance_registry, validate_run_state
 from tdd_gate_check import gate_mode_of, latest_gate_decision, load_events, validate_trace as validate_tdd_trace
+
+
+DIGEST_ANCHOR_EVENTS = {"run_initialized", "state_sealed", "state_reseal_baseline"}
 
 
 def utc_now() -> str:
@@ -308,6 +315,691 @@ def commit_transition(
     append_jsonl(trace_path, committed, writer_role="manager", scope="global")
 
 
+def project_root_for_artifact(artifact_dir: Path) -> Path:
+    resolved = artifact_dir.expanduser().resolve()
+    if resolved.parent.name == "workspace":
+        return resolved.parent.parent
+    state_path = resolved / "run_state.json"
+    if state_path.is_file():
+        state = load_object(state_path)
+        continuation = state.get("continuation")
+        if isinstance(continuation, dict):
+            checkpoint = continuation.get("checkpoint")
+            repository = checkpoint.get("repository") if isinstance(checkpoint, dict) else None
+            root = repository.get("root") if isinstance(repository, dict) else None
+            if isinstance(root, str) and root.strip():
+                return Path(root).expanduser().resolve()
+    raise ValueError("artifact directory must be under <project>/workspace/<run>")
+
+
+def repository_snapshot(project_root: Path) -> dict[str, object]:
+    root = project_root.expanduser().resolve()
+
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", "-C", str(root), *args],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    top = git("rev-parse", "--show-toplevel")
+    if top.returncode != 0:
+        return {
+            "root": str(root),
+            "cwd": str(root),
+            "branch": "",
+            "head": "",
+            "dirty_paths": [],
+            "dirty_entries": {},
+            "worktree_digest": "",
+        }
+    repository_root = Path(top.stdout.strip()).resolve()
+    branch = git("branch", "--show-current")
+    head = git("rev-parse", "HEAD")
+    status = git(
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--",
+        ".",
+        ":(exclude)workspace/**",
+    )
+    tracked = git(
+        "diff",
+        "--name-only",
+        "--no-renames",
+        "-z",
+        "HEAD",
+        "--",
+        ".",
+        ":(exclude)workspace/**",
+    )
+    diff = git(
+        "diff",
+        "--binary",
+        "--no-ext-diff",
+        "HEAD",
+        "--",
+        ".",
+        ":(exclude)workspace/**",
+    )
+    fingerprint = hashlib.sha256()
+    fingerprint.update(status.stdout.encode("utf-8", errors="surrogateescape"))
+    fingerprint.update(diff.stdout.encode("utf-8", errors="surrogateescape"))
+    untracked = git(
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        "--",
+        ".",
+        ":(exclude)workspace/**",
+    )
+    tracked_paths = {
+        value for value in tracked.stdout.split("\0") if value
+    } if tracked.returncode == 0 else set()
+    untracked_paths = {
+        value for value in untracked.stdout.split("\0") if value
+    } if untracked.returncode == 0 else set()
+    dirty_paths = sorted(tracked_paths | untracked_paths)
+    dirty_entries: dict[str, str] = {}
+    for value in dirty_paths:
+        entry = hashlib.sha256()
+        entry.update(value.encode("utf-8", errors="surrogateescape"))
+        entry_diff = git(
+            "diff",
+            "--binary",
+            "--no-ext-diff",
+            "--no-renames",
+            "HEAD",
+            "--",
+            value,
+        )
+        entry.update(entry_diff.stdout.encode("utf-8", errors="surrogateescape"))
+        if value in untracked_paths:
+            path = repository_root / value
+            if path.is_symlink():
+                entry.update(str(path.readlink()).encode("utf-8", errors="surrogateescape"))
+            elif path.is_file():
+                entry.update(path.read_bytes())
+        dirty_entries[value] = entry.hexdigest()
+    if untracked.returncode == 0:
+        for value in sorted(untracked_paths):
+            path = repository_root / value
+            fingerprint.update(value.encode("utf-8", errors="surrogateescape"))
+            if path.is_symlink():
+                fingerprint.update(str(path.readlink()).encode("utf-8", errors="surrogateescape"))
+            elif path.is_file():
+                fingerprint.update(path.read_bytes())
+    return {
+        "root": str(repository_root),
+        "cwd": str(root),
+        "branch": branch.stdout.strip() if branch.returncode == 0 else "",
+        "head": head.stdout.strip() if head.returncode == 0 else "",
+        "dirty_paths": dirty_paths,
+        "dirty_entries": dirty_entries,
+        "worktree_digest": fingerprint.hexdigest(),
+    }
+
+
+def derive_next_task(state: dict[str, object]) -> tuple[str, str]:
+    layers = state.get("state_layers")
+    working = layers.get("working_state") if isinstance(layers, dict) else None
+    current_task = str(working.get("current_task") or "") if isinstance(working, dict) else ""
+    tasks = state.get("tasks")
+    task_items = [item for item in tasks if isinstance(item, dict)] if isinstance(tasks, list) else []
+    task = next((item for item in task_items if str(item.get("id")) == current_task), None)
+    if task is None:
+        task = next(
+            (
+                item
+                for item in task_items
+                if item.get("status") not in {"passed", "merged", "cancelled"}
+            ),
+            None,
+        )
+    if task is None:
+        return "", "Inspect task_spec.md and define the next ready task"
+    task_id = str(task.get("id") or "")
+    task_path = str(task.get("task_path") or "task_spec.md")
+    task_name = str(task.get("name") or "unnamed task")
+    return task_id, f"Read {task_path} and continue task {task_id}: {task_name}"
+
+
+def legacy_continuation(state: dict[str, object], project_root: Path) -> dict[str, object]:
+    current_task, next_action = derive_next_task(state)
+    return {
+        "protocol": CONTINUATION_PROTOCOL,
+        "status": "unclaimed",
+        "owner": {"actor_id": "", "runtime": "", "epoch": 0, "claimed_at": ""},
+        "previous_owner": {},
+        "takeover_count": 0,
+        "checkpoint": {
+            "id": "",
+            "sequence": 0,
+            "checkpointed_at": str(state.get("updated_at") or state.get("created_at") or ""),
+            "actor_id": "",
+            "runtime": "",
+            "reason": "legacy artifact upgraded during resume",
+            "current_task": current_task,
+            "next_action": next_action,
+            "pending_verification": [],
+            "repository": {
+                "root": str(project_root),
+                "cwd": str(project_root),
+                "branch": "",
+                "head": "",
+                "dirty_paths": [],
+                "dirty_entries": {},
+                "worktree_digest": "",
+            },
+        },
+        "last_resume": {
+            "resumed_at": "",
+            "actor_id": "",
+            "runtime": "",
+            "takeover_reason": "",
+            "forced": False,
+        },
+    }
+
+
+def continuation_record(
+    state: dict[str, object], project_root: Path
+) -> tuple[dict[str, object], bool]:
+    value = state.get("continuation")
+    if isinstance(value, dict):
+        return value, False
+    value = legacy_continuation(state, project_root)
+    state["continuation"] = value
+    return value, True
+
+
+def validate_actor(value: str, label: str) -> str:
+    normalized = value.strip()
+    if not normalized or any(ord(character) < 32 for character in normalized):
+        raise ValueError(f"{label} must be a non-empty string without control characters")
+    return normalized
+
+
+def require_current_owner(
+    state: dict[str, object], actor_id: str, owner_epoch: int | None
+) -> None:
+    continuation = state.get("continuation")
+    owner = continuation.get("owner") if isinstance(continuation, dict) else None
+    current = str(owner.get("actor_id") or "") if isinstance(owner, dict) else ""
+    if not current:
+        return
+    actor = actor_id.strip()
+    if actor != current:
+        raise PermissionError(
+            f"current owner is {current!r}; --actor-id must match before mutating this run"
+        )
+    current_epoch = int(owner.get("epoch") or 0)
+    if owner_epoch != current_epoch:
+        raise PermissionError(
+            f"current owner epoch is {current_epoch}; --owner-epoch must match before mutating this run"
+        )
+
+
+def discover_active_runs(path: Path, selector: str = "") -> dict[str, object]:
+    target = path.expanduser().resolve()
+    if target.is_file() and target.name == "run_state.json":
+        state_paths = [target]
+    elif (target / "run_state.json").is_file():
+        state_paths = [target / "run_state.json"]
+    else:
+        workspace = target / "workspace"
+        state_paths = sorted(workspace.glob("*/run_state.json")) if workspace.is_dir() else []
+
+    active: list[dict[str, object]] = []
+    terminal: list[dict[str, object]] = []
+    corrupt: list[dict[str, str]] = []
+    for state_path in state_paths:
+        if selector and state_path.parent.name != selector:
+            continue
+        try:
+            state = load_object(state_path)
+        except ValueError as exc:
+            corrupt.append({"artifact_dir": str(state_path.parent.resolve()), "error": str(exc)})
+            continue
+        if str(state.get("mode") or "full") != "full":
+            continue
+        item = {
+            "artifact_dir": str(state_path.parent.resolve()),
+            "slug": state_path.parent.name,
+            "title": str(state.get("title") or ""),
+            "status": str(state.get("status") or ""),
+            "updated_at": str(state.get("updated_at") or ""),
+        }
+        if item["status"] in TERMINAL_RUN_STATUSES:
+            terminal.append(item)
+        else:
+            active.append(item)
+    return {
+        "project_or_artifact": str(target),
+        "active_count": len(active),
+        "runs": active,
+        "terminal_count": len(terminal),
+        "terminal_runs": terminal,
+        "corrupt": corrupt,
+    }
+
+
+def select_unique_active_run(path: Path, selector: str = "") -> Path:
+    discovered = discover_active_runs(path, selector)
+    corrupt = discovered["corrupt"]
+    if corrupt:
+        locations = ", ".join(str(item["artifact_dir"]) for item in corrupt)
+        raise ValueError(f"corrupt Full Harness run state found: {locations}")
+    runs = discovered["runs"]
+    if not isinstance(runs, list) or not runs:
+        raise ValueError("no active Full Harness run found")
+    if len(runs) != 1:
+        names = ", ".join(str(item.get("slug")) for item in runs if isinstance(item, dict))
+        raise ValueError(f"multiple active Full Harness runs found: {names}")
+    return Path(str(runs[0]["artifact_dir"])).resolve()
+
+
+def changed_repository_paths(
+    before: dict[str, object], after: dict[str, object]
+) -> tuple[bool, list[str]]:
+    before_paths = {str(item) for item in before.get("dirty_paths", [])} if isinstance(before.get("dirty_paths"), list) else set()
+    after_paths = {str(item) for item in after.get("dirty_paths", [])} if isinstance(after.get("dirty_paths"), list) else set()
+    before_digest = str(before.get("worktree_digest") or "")
+    after_digest = str(after.get("worktree_digest") or "")
+    before_entries = before.get("dirty_entries")
+    after_entries = after.get("dirty_entries")
+    if isinstance(before_entries, dict) and isinstance(after_entries, dict):
+        changed = sorted(
+            path
+            for path in set(before_entries) | set(after_entries)
+            if before_entries.get(path) != after_entries.get(path)
+        )
+        worktree_drift = bool(changed)
+    elif before_digest and after_digest:
+        worktree_drift = before_digest != after_digest
+        changed = sorted(before_paths | after_paths) if worktree_drift else []
+    else:
+        worktree_drift = before_paths != after_paths
+        changed = sorted(before_paths | after_paths) if worktree_drift else []
+    metadata_drift = any(before.get(key) != after.get(key) for key in ("root", "branch", "head"))
+    drift = worktree_drift or metadata_drift
+    return drift, changed
+
+
+def build_resume_packet(
+    artifact_dir: Path,
+    state: dict[str, object],
+    *,
+    current_repository: dict[str, object],
+    legacy_upgrade: bool,
+    forced_takeover: bool,
+) -> dict[str, object]:
+    continuation = state["continuation"]
+    checkpoint = continuation["checkpoint"]
+    checkpoint_repository = checkpoint.get("repository")
+    if not isinstance(checkpoint_repository, dict):
+        checkpoint_repository = {}
+    workspace_drift = False
+    changed_paths: list[str] = []
+    if int(checkpoint.get("sequence") or 0) > 0:
+        workspace_drift, changed_paths = changed_repository_paths(
+            checkpoint_repository,
+            current_repository,
+        )
+
+    tasks = state.get("tasks")
+    task_items = [item for item in tasks if isinstance(item, dict)] if isinstance(tasks, list) else []
+    active_tasks = [
+        {
+            "id": str(item.get("id") or ""),
+            "name": str(item.get("name") or ""),
+            "status": str(item.get("status") or ""),
+            "task_path": str(item.get("task_path") or ""),
+            "report_path": str(item.get("report_path") or ""),
+        }
+        for item in task_items
+        if item.get("status") not in {"passed", "merged", "cancelled"}
+    ]
+    blockers = [
+        f"{item.get('id')}: {item.get('stop_reason') or item.get('status')}"
+        for item in task_items
+        if item.get("status") in {"blocked", "verify_failed"}
+    ]
+    layers = state.get("state_layers")
+    working = layers.get("working_state") if isinstance(layers, dict) else None
+    if isinstance(working, dict) and isinstance(working.get("active_blockers"), list):
+        blockers.extend(str(item) for item in working["active_blockers"] if str(item).strip())
+    session = layers.get("session_state") if isinstance(layers, dict) else None
+    artifact_paths = session.get("artifact_paths") if isinstance(session, dict) else None
+    required_reads = []
+    if isinstance(artifact_paths, dict):
+        required_reads.extend(str(value) for value in artifact_paths.values() if str(value).strip())
+    current_task = str(checkpoint.get("current_task") or "")
+    current = next((item for item in active_tasks if item["id"] == current_task), None)
+    if current:
+        required_reads.extend(
+            value for value in (current["task_path"], current["report_path"]) if value
+        )
+    candidate_reads = list(dict.fromkeys(required_reads))
+    required_reads = [
+        value for value in candidate_reads if (artifact_dir / value).is_file()
+    ]
+    missing_required_reads = [
+        value for value in candidate_reads if not (artifact_dir / value).is_file()
+    ]
+    next_action = str(checkpoint.get("next_action") or "").strip()
+    next_verification = next_action
+    if workspace_drift:
+        next_verification = (
+            "Inspect and reconcile post-checkpoint workspace drift before continuing: "
+            + next_action
+        )
+    return {
+        "protocol": CONTINUATION_PROTOCOL,
+        "artifact_dir": str(artifact_dir),
+        "project_root": str(project_root_for_artifact(artifact_dir)),
+        "run_status": str(state.get("status") or ""),
+        "current_stage": str(state.get("current_stage") or ""),
+        "current_task": current_task,
+        "recorded_next_action": next_action,
+        "next_verification": next_verification,
+        "pending_verification": list(checkpoint.get("pending_verification") or []),
+        "active_tasks": active_tasks,
+        "blockers": blockers,
+        "required_reads": required_reads,
+        "missing_required_reads": missing_required_reads,
+        "owner": deepcopy(continuation["owner"]),
+        "previous_owner": deepcopy(continuation.get("previous_owner") or {}),
+        "forced_takeover": forced_takeover,
+        "legacy_upgrade": legacy_upgrade,
+        "workspace_drift": workspace_drift,
+        "changed_paths": changed_paths,
+        "checkpoint_repository": checkpoint_repository,
+        "current_repository": current_repository,
+        "integrity": "pass",
+    }
+
+
+def discover_runs(args: argparse.Namespace) -> int:
+    payload = discover_active_runs(args.path, args.run)
+    print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    return 1 if payload["corrupt"] else 0
+
+
+def checkpoint_run(args: argparse.Namespace) -> int:
+    artifact_dir = select_unique_active_run(args.path, args.run)
+    with locked(artifact_dir / ".harnessctl"):
+        ensure_trace_integrity(artifact_dir)
+        state_path = artifact_dir / "run_state.json"
+        state = load_object(state_path)
+        original_state = deepcopy(state)
+        current_errors = validate_run_state(state_path)
+        if current_errors:
+            raise ValueError("current run_state is invalid: " + "; ".join(current_errors))
+        project_root = project_root_for_artifact(artifact_dir)
+        continuation, legacy_upgrade = continuation_record(state, project_root)
+        actor_id = validate_actor(args.actor_id, "actor id")
+        runtime = validate_actor(args.runtime.casefold(), "runtime")
+        owner = continuation.get("owner")
+        if not isinstance(owner, dict):
+            raise ValueError("continuation owner is invalid")
+        if str(owner.get("actor_id") or ""):
+            require_current_owner(state, actor_id, args.owner_epoch)
+            if str(owner.get("runtime") or "") != runtime:
+                raise ValueError("checkpoint runtime must match the current owner runtime")
+        else:
+            owner.update(
+                {
+                    "actor_id": actor_id,
+                    "runtime": runtime,
+                    "epoch": 1,
+                    "claimed_at": utc_now(),
+                }
+            )
+
+        checkpoint = continuation.get("checkpoint")
+        if not isinstance(checkpoint, dict):
+            raise ValueError("continuation checkpoint is invalid")
+        next_action = args.next_action.strip()
+        reason = args.reason.strip()
+        if not next_action or not reason:
+            raise ValueError("checkpoint requires non-empty --next-action and --reason")
+        current_task = args.current_task.strip() or str(checkpoint.get("current_task") or "")
+        now = utc_now()
+        pending_verification = (
+            list(dict.fromkeys(args.pending_verification))
+            if args.pending_verification
+            else list(checkpoint.get("pending_verification") or [])
+        )
+        checkpoint.update(
+            {
+                "id": str(uuid.uuid4()),
+                "sequence": int(checkpoint.get("sequence") or 0) + 1,
+                "checkpointed_at": now,
+                "actor_id": actor_id,
+                "runtime": runtime,
+                "reason": reason,
+                "current_task": current_task,
+                "next_action": next_action,
+                "pending_verification": pending_verification,
+                "repository": repository_snapshot(project_root),
+            }
+        )
+        continuation["status"] = "active"
+        layers = state.get("state_layers")
+        working = layers.get("working_state") if isinstance(layers, dict) else None
+        if isinstance(working, dict):
+            working["current_task"] = current_task
+            working["updated_at"] = now
+        state["updated_at"] = now
+        validate_candidate(artifact_dir, "run_state.json", state, validate_run_state)
+        commit_transition(
+            artifact_dir,
+            state_path,
+            original_state,
+            state,
+            {
+                "event": "continuation_checkpoint",
+                "actor_id": actor_id,
+                "runtime": runtime,
+                "checkpoint_id": checkpoint["id"],
+                "sequence": checkpoint["sequence"],
+                "current_task": current_task,
+                "next_action": next_action,
+                "reason": reason,
+                "legacy_upgrade": legacy_upgrade,
+            },
+        )
+        print(
+            json.dumps(
+                {
+                    "artifact_dir": str(artifact_dir),
+                    "checkpoint_id": checkpoint["id"],
+                    "sequence": checkpoint["sequence"],
+                    "owner": owner,
+                    "next_action": next_action,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    return 0
+
+
+def handoff_run(args: argparse.Namespace) -> int:
+    artifact_dir = select_unique_active_run(args.path, args.run)
+    with locked(artifact_dir / ".harnessctl"):
+        ensure_trace_integrity(artifact_dir)
+        state_path = artifact_dir / "run_state.json"
+        state = load_object(state_path)
+        original_state = deepcopy(state)
+        project_root = project_root_for_artifact(artifact_dir)
+        continuation, _ = continuation_record(state, project_root)
+        actor_id = validate_actor(args.actor_id, "actor id")
+        require_current_owner(state, actor_id, args.owner_epoch)
+        owner = continuation.get("owner")
+        if not isinstance(owner, dict) or not str(owner.get("actor_id") or ""):
+            raise ValueError("handoff requires an acquired continuation owner; checkpoint first")
+        checkpoint = continuation.get("checkpoint")
+        if not isinstance(checkpoint, dict):
+            raise ValueError("continuation checkpoint is invalid")
+        reason = args.reason.strip()
+        next_action = args.next_action.strip()
+        if not reason or not next_action:
+            raise ValueError("handoff requires non-empty --reason and --next-action")
+        now = utc_now()
+        pending_verification = (
+            list(dict.fromkeys(args.pending_verification))
+            if args.pending_verification
+            else list(checkpoint.get("pending_verification") or [])
+        )
+        checkpoint.update(
+            {
+                "id": str(uuid.uuid4()),
+                "sequence": int(checkpoint.get("sequence") or 0) + 1,
+                "checkpointed_at": now,
+                "actor_id": actor_id,
+                "runtime": str(owner.get("runtime") or ""),
+                "reason": reason,
+                "next_action": next_action,
+                "pending_verification": pending_verification,
+                "repository": repository_snapshot(project_root),
+            }
+        )
+        continuation["status"] = "ready"
+        state["updated_at"] = now
+        validate_candidate(artifact_dir, "run_state.json", state, validate_run_state)
+        commit_transition(
+            artifact_dir,
+            state_path,
+            original_state,
+            state,
+            {
+                "event": "continuation_handoff",
+                "actor_id": actor_id,
+                "runtime": owner.get("runtime"),
+                "checkpoint_id": checkpoint["id"],
+                "sequence": checkpoint["sequence"],
+                "next_action": next_action,
+                "reason": reason,
+            },
+        )
+        print(
+            json.dumps(
+                {
+                    "artifact_dir": str(artifact_dir),
+                    "status": "ready",
+                    "owner": owner,
+                    "checkpoint_id": checkpoint["id"],
+                    "next_action": next_action,
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    return 0
+
+
+def resume_run(args: argparse.Namespace) -> int:
+    target = args.path.expanduser().resolve()
+    if target.is_file() and target.name == "run_state.json":
+        coordination_root = project_root_for_artifact(target.parent)
+    elif (target / "run_state.json").is_file():
+        coordination_root = project_root_for_artifact(target)
+    else:
+        coordination_root = target
+
+    with locked(coordination_root / "workspace" / ".resume"):
+        artifact_dir = select_unique_active_run(target, args.run)
+        with locked(artifact_dir / ".harnessctl"):
+            recovery_plan = plan_artifact_recovery(artifact_dir)
+            errors = artifact_validation_errors_with_recovery(artifact_dir, recovery_plan)
+            if errors:
+                raise ValueError("artifact validation failed before resume: " + "; ".join(errors))
+
+            state_path = artifact_dir / "run_state.json"
+            state = load_object(state_path)
+            original_state = deepcopy(state)
+            project_root = project_root_for_artifact(artifact_dir)
+            continuation, legacy_upgrade = continuation_record(state, project_root)
+            actor_id = validate_actor(args.actor_id, "actor id")
+            runtime = validate_actor(args.runtime.casefold(), "runtime")
+            owner = continuation.get("owner")
+            if not isinstance(owner, dict):
+                raise ValueError("continuation owner is invalid")
+            previous_owner = deepcopy(owner) if str(owner.get("actor_id") or "") else {}
+            same_owner = (
+                str(owner.get("actor_id") or "") == actor_id
+                and str(owner.get("runtime") or "") == runtime
+            )
+            if same_owner:
+                require_current_owner(state, actor_id, args.owner_epoch)
+            forced = (
+                continuation.get("status") == "active"
+                and bool(previous_owner)
+                and not same_owner
+            )
+            takeover_reason = args.takeover_reason.strip()
+            if forced and not takeover_reason:
+                raise ValueError("active owner takeover requires a non-empty takeover reason (--takeover-reason)")
+
+            if not same_owner:
+                old_epoch = int(owner.get("epoch") or 0)
+                continuation["previous_owner"] = previous_owner
+                continuation["owner"] = {
+                    "actor_id": actor_id,
+                    "runtime": runtime,
+                    "epoch": old_epoch + 1,
+                    "claimed_at": utc_now(),
+                }
+                if previous_owner:
+                    continuation["takeover_count"] = int(continuation.get("takeover_count") or 0) + 1
+            continuation["status"] = "active"
+            continuation["last_resume"] = {
+                "resumed_at": utc_now(),
+                "actor_id": actor_id,
+                "runtime": runtime,
+                "takeover_reason": takeover_reason,
+                "forced": forced,
+            }
+            state["updated_at"] = utc_now()
+            current_repository = repository_snapshot(project_root)
+
+            if state != original_state:
+                validate_candidate(artifact_dir, "run_state.json", state, validate_run_state)
+            packet = build_resume_packet(
+                artifact_dir,
+                state,
+                current_repository=current_repository,
+                legacy_upgrade=legacy_upgrade,
+                forced_takeover=forced,
+            )
+
+            apply_recovery_plan(artifact_dir, recovery_plan, emit=False)
+            if state != original_state:
+                commit_transition(
+                    artifact_dir,
+                    state_path,
+                    original_state,
+                    state,
+                    {
+                        "event": "continuation_resume",
+                        "previous_owner": previous_owner,
+                        "owner": continuation["owner"],
+                        "forced": forced,
+                        "takeover_reason": takeover_reason,
+                        "legacy_upgrade": legacy_upgrade,
+                    },
+                )
+            print(json.dumps(packet, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
 def task_set_unlocked(args: argparse.Namespace) -> int:
     artifact_dir = args.artifact_dir.expanduser().resolve()
     state_path = artifact_dir / "run_state.json"
@@ -316,6 +1008,7 @@ def task_set_unlocked(args: argparse.Namespace) -> int:
     current_errors = validate_run_state(state_path)
     if current_errors:
         raise ValueError("current run_state is invalid: " + "; ".join(current_errors))
+    require_current_owner(state, args.actor_id, args.owner_epoch)
     task = find_unique(state.get("tasks"), args.task_id, "task")
     old_status = str(task.get("status") or "")
     allowed = TASK_TRANSITIONS.get(old_status, set())
@@ -390,6 +1083,75 @@ def task_set(args: argparse.Namespace) -> int:
         return task_set_unlocked(args)
 
 
+def task_refresh_unlocked(args: argparse.Namespace) -> int:
+    artifact_dir = args.artifact_dir.expanduser().resolve()
+    state_path = artifact_dir / "run_state.json"
+    state = load_object(state_path)
+    original_state = deepcopy(state)
+    current_errors = validate_run_state(state_path)
+    if current_errors:
+        raise ValueError("current run state is invalid: " + "; ".join(current_errors))
+    require_current_owner(state, args.actor_id, args.owner_epoch)
+
+    task = find_unique(state.get("tasks"), args.task_id, "task")
+    if task.get("status") not in {"ready", "running", "verify_failed", "passed", "merged"}:
+        raise ValueError("task evidence refresh requires an active or completed task")
+    if not args.evidence_file:
+        raise ValueError("task evidence refresh requires --evidence-file")
+
+    transaction_id = str(uuid.uuid4())
+    subject = f"task:{args.task_id}"
+    additions = build_evidence_additions(
+        artifact_dir,
+        subject=subject,
+        freeform=[],
+        files=args.evidence_file,
+        transaction_id=transaction_id,
+        policy=state.get("evidence_policy"),
+        verification_tier=args.verification_tier,
+    )
+    replacement_paths = {
+        str(item.get("payload", {}).get("path"))
+        for item in additions
+        if isinstance(item, dict) and isinstance(item.get("payload"), dict)
+    }
+    existing = task.get("evidence") if isinstance(task.get("evidence"), list) else []
+    retained = [
+        item for item in existing
+        if not (
+            isinstance(item, dict)
+            and isinstance(item.get("payload"), dict)
+            and str(item["payload"].get("path")) in replacement_paths
+        )
+    ]
+    task["evidence"] = append_unique_values(retained, additions)
+    state["updated_at"] = utc_now()
+    validate_candidate(artifact_dir, "run_state.json", state, validate_run_state)
+    commit_transition(
+        artifact_dir,
+        state_path,
+        original_state,
+        state,
+        {
+            "event": "task_evidence_refresh",
+            "task_id": args.task_id,
+            "status": task.get("status"),
+            "evidence": additions,
+            "replaced_paths": sorted(replacement_paths),
+        },
+        transaction_id=transaction_id,
+    )
+    print(f"task_refresh=committed {args.task_id} paths={len(replacement_paths)}")
+    return 0
+
+
+def task_refresh(args: argparse.Namespace) -> int:
+    artifact_dir = args.artifact_dir.expanduser().resolve()
+    with locked(artifact_dir / ".harnessctl"):
+        ensure_trace_structure_integrity(artifact_dir)
+        return task_refresh_unlocked(args)
+
+
 def acceptance_set_unlocked(args: argparse.Namespace) -> int:
     artifact_dir = args.artifact_dir.expanduser().resolve()
     registry_path = artifact_dir / "acceptance_registry.json"
@@ -398,6 +1160,9 @@ def acceptance_set_unlocked(args: argparse.Namespace) -> int:
     current_errors = validate_acceptance_registry(registry_path)
     if current_errors:
         raise ValueError("current acceptance registry is invalid: " + "; ".join(current_errors))
+    require_current_owner(
+        load_object(artifact_dir / "run_state.json"), args.actor_id, args.owner_epoch
+    )
 
     criterion = find_unique(registry.get("criteria"), args.criterion_id, "acceptance criterion")
     old_status = str(criterion.get("status") or "")
@@ -471,6 +1236,76 @@ def acceptance_set(args: argparse.Namespace) -> int:
         return acceptance_set_unlocked(args)
 
 
+def acceptance_refresh_unlocked(args: argparse.Namespace) -> int:
+    artifact_dir = args.artifact_dir.expanduser().resolve()
+    state = load_object(artifact_dir / "run_state.json")
+    require_current_owner(state, args.actor_id, args.owner_epoch)
+    registry_path = artifact_dir / "acceptance_registry.json"
+    registry = load_object(registry_path)
+    original_registry = deepcopy(registry)
+    current_errors = validate_acceptance_registry(registry_path)
+    if current_errors:
+        raise ValueError("current acceptance registry is invalid: " + "; ".join(current_errors))
+
+    criterion = find_unique(registry.get("criteria"), args.criterion_id, "acceptance criterion")
+    if criterion.get("status") != "pass":
+        raise ValueError("acceptance evidence refresh requires a criterion with status pass")
+    if not args.evidence_file:
+        raise ValueError("acceptance evidence refresh requires --evidence-file")
+
+    transaction_id = str(uuid.uuid4())
+    subject = f"acceptance:{args.criterion_id}"
+    additions = build_evidence_additions(
+        artifact_dir,
+        subject=subject,
+        freeform=[],
+        files=args.evidence_file,
+        transaction_id=transaction_id,
+        policy=registry.get("evidence_policy"),
+        verification_tier=args.verification_tier,
+    )
+    replacement_paths = {
+        str(item.get("payload", {}).get("path"))
+        for item in additions
+        if isinstance(item, dict) and isinstance(item.get("payload"), dict)
+    }
+    existing = criterion.get("evidence") if isinstance(criterion.get("evidence"), list) else []
+    retained = [
+        item for item in existing
+        if not (
+            isinstance(item, dict)
+            and isinstance(item.get("payload"), dict)
+            and str(item["payload"].get("path")) in replacement_paths
+        )
+    ]
+    criterion["evidence"] = append_unique_values(retained, additions)
+    registry["updated_at"] = utc_now()
+    validate_candidate(artifact_dir, "acceptance_registry.json", registry, validate_acceptance_registry)
+    commit_transition(
+        artifact_dir,
+        registry_path,
+        original_registry,
+        registry,
+        {
+            "event": "acceptance_evidence_refresh",
+            "criterion_id": args.criterion_id,
+            "status": "pass",
+            "evidence": additions,
+            "replaced_paths": sorted(replacement_paths),
+        },
+        transaction_id=transaction_id,
+    )
+    print(f"acceptance_refresh=committed {args.criterion_id} paths={len(replacement_paths)}")
+    return 0
+
+
+def acceptance_refresh(args: argparse.Namespace) -> int:
+    artifact_dir = args.artifact_dir.expanduser().resolve()
+    with locked(artifact_dir / ".harnessctl"):
+        ensure_trace_structure_integrity(artifact_dir)
+        return acceptance_refresh_unlocked(args)
+
+
 def run_set_unlocked(args: argparse.Namespace) -> int:
     artifact_dir = args.artifact_dir.expanduser().resolve()
     state_path = artifact_dir / "run_state.json"
@@ -480,6 +1315,7 @@ def run_set_unlocked(args: argparse.Namespace) -> int:
     current_errors = validate_run_state(state_path)
     if current_errors:
         raise ValueError("current run_state is invalid: " + "; ".join(current_errors))
+    require_current_owner(state, args.actor_id, args.owner_epoch)
 
     old_status = str(state.get("status") or "")
     if args.status not in RUN_TRANSITIONS.get(old_status, set()):
@@ -590,6 +1426,7 @@ def dispatch_create_unlocked(args: argparse.Namespace) -> int:
     current_errors = validate_run_state(state_path)
     if current_errors:
         raise ValueError("current run_state is invalid: " + "; ".join(current_errors))
+    require_current_owner(state, args.actor_id, args.owner_epoch)
     witness_errors = state_witness_gate(artifact_dir, state, require_review=False)
     if witness_errors:
         raise ValueError("state witness gate failed before dispatch: " + "; ".join(witness_errors))
@@ -619,13 +1456,17 @@ def dispatch_create_unlocked(args: argparse.Namespace) -> int:
         raise ValueError("model routing values must not contain control characters")
     if args.escalation_count < 0:
         raise ValueError("escalation count must be non-negative")
-    if runtime == "codex":
-        configured = CODEX_MODEL_PROFILES[args.profile]
+    sealed_profiles = model_profiles_for(runtime)
+    if sealed_profiles is not None:
+        configured = sealed_profiles[args.profile]
         requested_model = requested_model or configured["model"]
         reasoning_effort = reasoning_effort or configured["reasoning_effort"]
         if requested_model != configured["model"] or reasoning_effort != configured["reasoning_effort"]:
-            raise ValueError(f"Codex profile {args.profile} must use {configured['model']} {configured['reasoning_effort']}")
-        if "terra" in resolved_model.casefold():
+            raise ValueError(
+                f"{runtime} profile {args.profile} must use "
+                f"{configured['model']} {configured['reasoning_effort']}"
+            )
+        if runtime == "codex" and "terra" in resolved_model.casefold():
             raise ValueError("Codex resolved model must not use disabled Terra models")
 
     session_state = state.get("state_layers", {}).get("session_state", {})
@@ -691,6 +1532,7 @@ def dispatch_update_unlocked(args: argparse.Namespace) -> int:
     current_errors = validate_run_state(state_path)
     if current_errors:
         raise ValueError("current run_state is invalid: " + "; ".join(current_errors))
+    require_current_owner(state, args.actor_id, args.owner_epoch)
     session_state = state.get("state_layers", {}).get("session_state", {})
     dispatches = session_state.get("delegation_state") if isinstance(session_state, dict) else None
     record = find_unique(dispatches, args.dispatch_id, "dispatch", key="dispatch_id")
@@ -732,57 +1574,105 @@ def dispatch_update(args: argparse.Namespace) -> int:
         return dispatch_update_unlocked(args)
 
 
+def plan_artifact_recovery(
+    artifact_dir: Path,
+) -> list[tuple[dict[str, object], str]]:
+    trace_path = artifact_dir / "trace.jsonl"
+    jsonl_errors = validate_jsonl(trace_path)
+    if jsonl_errors:
+        raise ValueError("artifact trace integrity failed: " + "; ".join(jsonl_errors))
+    events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    starts = {
+        str(event["transaction_id"]): event
+        for event in events
+        if isinstance(event, dict)
+        and str(event.get("event", "")).endswith("_started")
+        and event.get("transaction_id")
+    }
+    terminals = {
+        str(event["transaction_id"])
+        for event in events
+        if isinstance(event, dict)
+        and not str(event.get("event", "")).endswith("_started")
+        and event.get("transaction_id")
+    }
+    pending = [event for transaction_id, event in starts.items() if transaction_id not in terminals]
+    plan: list[tuple[dict[str, object], str]] = []
+    for started in pending:
+        transaction_id = str(started["transaction_id"])
+        state_file = str(started.get("state_file") or "")
+        if not state_file or Path(state_file).name != state_file:
+            raise ValueError(f"transaction {transaction_id} has unsafe or missing state_file")
+        before_digest = str(started.get("before_sha256") or "")
+        after_digest = str(started.get("after_sha256") or "")
+        if not before_digest or not after_digest:
+            raise ValueError(f"transaction {transaction_id} lacks recovery digests")
+        state_path = artifact_dir / state_file
+        actual_digest = sha256(state_path.read_bytes())
+        base_event = str(started["event"])[: -len("_started")]
+        if actual_digest == after_digest:
+            terminal_event = base_event
+            result = "committed"
+        elif actual_digest == before_digest:
+            terminal_event = f"{base_event}_aborted"
+            result = "aborted"
+        else:
+            raise ValueError(f"transaction {transaction_id} state digest matches neither before nor after")
+        terminal = {**started, "event": terminal_event, "ts": utc_now()}
+        plan.append((terminal, result))
+    return plan
+
+
+def apply_recovery_plan(
+    artifact_dir: Path,
+    plan: list[tuple[dict[str, object], str]],
+    *,
+    emit: bool,
+) -> list[str]:
+    trace_path = artifact_dir / "trace.jsonl"
+    results: list[str] = []
+    for terminal, result in plan:
+        transaction_id = str(terminal["transaction_id"])
+        append_jsonl(trace_path, terminal, writer_role="manager", scope="global")
+        results.append(f"{result} {transaction_id}")
+        if emit:
+            print(f"recovery={result} {transaction_id}")
+    if emit and not plan:
+        print("recovery=no incomplete transactions")
+    return results
+
+
+def recover_artifact_unlocked(artifact_dir: Path, *, emit: bool) -> list[str]:
+    plan = plan_artifact_recovery(artifact_dir)
+    results = apply_recovery_plan(artifact_dir, plan, emit=emit)
+    ensure_trace_integrity(artifact_dir)
+    return results
+
+
+def artifact_validation_errors_with_recovery(
+    artifact_dir: Path,
+    plan: list[tuple[dict[str, object], str]],
+) -> list[str]:
+    if not plan:
+        return artifact_validation_errors(artifact_dir)
+    fd, name = tempfile.mkstemp(prefix=".trace.recovery.", suffix=".jsonl", dir=str(artifact_dir))
+    path = Path(name)
+    try:
+        with open(fd, "w", encoding="utf-8", closefd=True) as handle:
+            handle.write((artifact_dir / "trace.jsonl").read_text(encoding="utf-8"))
+            for terminal, _ in plan:
+                handle.write(json.dumps(terminal, ensure_ascii=False, sort_keys=True) + "\n")
+        return artifact_validation_errors(artifact_dir, trace_path=path)
+    finally:
+        path.unlink(missing_ok=True)
+
+
 def recover_artifact(args: argparse.Namespace) -> int:
     artifact_dir = args.artifact_dir.expanduser().resolve()
-    trace_path = artifact_dir / "trace.jsonl"
     with locked(artifact_dir / ".harnessctl"):
-        jsonl_errors = validate_jsonl(trace_path)
-        if jsonl_errors:
-            raise ValueError("artifact trace integrity failed: " + "; ".join(jsonl_errors))
-        events = [json.loads(line) for line in trace_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-        starts = {
-            str(event["transaction_id"]): event
-            for event in events
-            if isinstance(event, dict)
-            and str(event.get("event", "")).endswith("_started")
-            and event.get("transaction_id")
-        }
-        terminals = {
-            str(event["transaction_id"])
-            for event in events
-            if isinstance(event, dict)
-            and not str(event.get("event", "")).endswith("_started")
-            and event.get("transaction_id")
-        }
-        pending = [event for transaction_id, event in starts.items() if transaction_id not in terminals]
-        if not pending:
-            ensure_trace_integrity(artifact_dir)
-            print("recovery=no incomplete transactions")
-            return 0
-        for started in pending:
-            transaction_id = str(started["transaction_id"])
-            state_file = str(started.get("state_file") or "")
-            if not state_file or Path(state_file).name != state_file:
-                raise ValueError(f"transaction {transaction_id} has unsafe or missing state_file")
-            before_digest = str(started.get("before_sha256") or "")
-            after_digest = str(started.get("after_sha256") or "")
-            if not before_digest or not after_digest:
-                raise ValueError(f"transaction {transaction_id} lacks recovery digests")
-            state_path = artifact_dir / state_file
-            actual_digest = sha256(state_path.read_bytes())
-            base_event = str(started["event"])[: -len("_started")]
-            if actual_digest == after_digest:
-                terminal_event = base_event
-                result = "committed"
-            elif actual_digest == before_digest:
-                terminal_event = f"{base_event}_aborted"
-                result = "aborted"
-            else:
-                raise ValueError(f"transaction {transaction_id} state digest matches neither before nor after")
-            terminal = {**started, "event": terminal_event, "ts": utc_now()}
-            append_jsonl(trace_path, terminal, writer_role="manager", scope="global")
-            print(f"recovery={result} {transaction_id}")
-        ensure_trace_integrity(artifact_dir)
+        state = load_object(artifact_dir / "run_state.json")
+        require_current_owner(state, args.actor_id, args.owner_epoch)
+        recover_artifact_unlocked(artifact_dir, emit=True)
     return 0
 
 
@@ -854,15 +1744,21 @@ def validate_transaction_digest_chain(path: Path) -> list[str]:
     initialized = 0
     previous_was_start: str | None = None
     digest_pattern = re.compile(r"^[0-9a-f]{64}$")
+    parsed_events: list[dict[str, object]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if not isinstance(event, dict):
-            continue
+        if isinstance(event, dict):
+            parsed_events.append(event)
+    has_sealed_anchor = any(
+        event.get("event") in {"state_sealed", "state_reseal_baseline"}
+        for event in parsed_events
+    )
+    for event in parsed_events:
         state_digests = event.get("state_digests")
-        if event.get("event") in {"run_initialized", "state_sealed"} and isinstance(state_digests, dict):
+        if event.get("event") in DIGEST_ANCHOR_EVENTS and isinstance(state_digests, dict):
             if event.get("event") == "run_initialized":
                 initialized += 1
                 if initialized > 1:
@@ -871,7 +1767,8 @@ def validate_transaction_digest_chain(path: Path) -> list[str]:
                 if isinstance(filename, str) and isinstance(digest, str):
                     if not digest_pattern.fullmatch(digest):
                         errors.append(f"trace.jsonl: invalid canonical digest for {filename}")
-                    expected[filename] = digest
+                    if event.get("event") != "run_initialized" or not has_sealed_anchor:
+                        expected[filename] = digest
             continue
         event_name = str(event.get("event") or "")
         state_file = event.get("state_file")
@@ -900,21 +1797,29 @@ def validate_transaction_digest_chain(path: Path) -> list[str]:
     return errors
 
 
-def ensure_trace_integrity(artifact_dir: Path) -> None:
+def ensure_trace_structure_integrity(artifact_dir: Path) -> None:
     errors = [
         *validate_jsonl(artifact_dir / "trace.jsonl"),
         *validate_jsonl(artifact_dir / "tdd_trace.jsonl"),
         *validate_trace_transactions(artifact_dir / "trace.jsonl"),
         *validate_transaction_digest_chain(artifact_dir / "trace.jsonl"),
         *validate_canonical_state_digests(artifact_dir),
-        *validate_evidence_receipts(artifact_dir),
     ]
     if errors:
         raise ValueError("artifact trace integrity failed: " + "; ".join(errors))
 
 
-def validate_canonical_state_digests(artifact_dir: Path) -> list[str]:
-    trace_path = artifact_dir / "trace.jsonl"
+def ensure_trace_integrity(artifact_dir: Path) -> None:
+    ensure_trace_structure_integrity(artifact_dir)
+    errors = validate_evidence_receipts(artifact_dir)
+    if errors:
+        raise ValueError("artifact trace integrity failed: " + "; ".join(errors))
+
+
+def validate_canonical_state_digests(
+    artifact_dir: Path, trace_path: Path | None = None
+) -> list[str]:
+    trace_path = trace_path or artifact_dir / "trace.jsonl"
     if not trace_path.exists():
         return []
     expected: dict[str, str] = {}
@@ -925,7 +1830,7 @@ def validate_canonical_state_digests(artifact_dir: Path) -> list[str]:
             continue
         if not isinstance(event, dict):
             continue
-        if event.get("event") in {"run_initialized", "state_sealed"} and isinstance(event.get("state_digests"), dict):
+        if event.get("event") in DIGEST_ANCHOR_EVENTS and isinstance(event.get("state_digests"), dict):
             for filename, digest in event["state_digests"].items():
                 if isinstance(filename, str) and isinstance(digest, str):
                     expected[filename] = digest
@@ -965,6 +1870,7 @@ def seal_artifact(args: argparse.Namespace) -> int:
             raise ValueError("cannot seal invalid artifact: " + "; ".join(structural_errors))
         state = load_object(artifact_dir / "run_state.json")
         original_state = deepcopy(state)
+        require_current_owner(state, args.actor_id, args.owner_epoch)
         witness_errors = state_witness_gate(artifact_dir, state, require_review=False)
         if witness_errors:
             raise ValueError("cannot seal invalid state witness: " + "; ".join(witness_errors))
@@ -989,6 +1895,29 @@ def seal_artifact(args: argparse.Namespace) -> int:
         reason = args.reason.strip()
         if not reason:
             raise ValueError("seal requires --reason")
+        if has_state_seal(artifact_dir):
+            baseline_digests = {
+                "run_state.json": sha256((artifact_dir / "run_state.json").read_bytes()),
+                "acceptance_registry.json": sha256(
+                    (artifact_dir / "acceptance_registry.json").read_bytes()
+                ),
+            }
+            state_witness = state.get("state_witness")
+            if isinstance(state_witness, dict) and state_witness.get("required"):
+                baseline_digests[str(state_witness["path"])] = sha256(
+                    (artifact_dir / str(state_witness["path"])).read_bytes()
+                )
+            append_jsonl(
+                artifact_dir / "trace.jsonl",
+                {
+                    "event": "state_reseal_baseline",
+                    "ts": utc_now(),
+                    "reason": reason,
+                    "state_digests": baseline_digests,
+                },
+                writer_role="manager",
+                scope="global",
+            )
         state_witness = state.get("state_witness")
         if isinstance(state_witness, dict) and state_witness.get("required"):
             witness_path = artifact_dir / str(state_witness["path"])
@@ -1032,6 +1961,7 @@ def witness_set(args: argparse.Namespace) -> int:
         current_errors = validate_run_state(state_path)
         if current_errors:
             raise ValueError("current run_state is invalid: " + "; ".join(current_errors))
+        require_current_owner(state, args.actor_id, args.owner_epoch)
         record = state.get("state_witness")
         if not isinstance(record, dict) or not record.get("required"):
             raise ValueError("state witness is not required for this run")
@@ -1089,8 +2019,10 @@ def witness_set(args: argparse.Namespace) -> int:
         return 0
 
 
-def validate_evidence_receipts(artifact_dir: Path) -> list[str]:
-    trace_path = artifact_dir / "trace.jsonl"
+def validate_evidence_receipts(
+    artifact_dir: Path, trace_path: Path | None = None
+) -> list[str]:
+    trace_path = trace_path or artifact_dir / "trace.jsonl"
     if not trace_path.exists():
         return []
     terminals: dict[str, dict[str, object]] = {}
@@ -1283,8 +2215,10 @@ def validate_active_tdd_gates(
     return [f"tdd_trace.jsonl: {error}" for error in validate_tdd_trace(trace_path, source_paths=[], tolerance_seconds=1.0)]
 
 
-def validate_artifact(args: argparse.Namespace) -> int:
-    artifact_dir = args.artifact_dir.expanduser().resolve()
+def artifact_validation_errors(
+    artifact_dir: Path, *, trace_path: Path | None = None
+) -> list[str]:
+    trace_path = trace_path or artifact_dir / "trace.jsonl"
     validators = (
         (artifact_dir / "run_state.json", validate_run_state),
         (artifact_dir / "acceptance_registry.json", validate_acceptance_registry),
@@ -1295,17 +2229,23 @@ def validate_artifact(args: argparse.Namespace) -> int:
             errors.append(f"missing file: {path.name}")
         else:
             errors.extend(validator(path))
-    errors.extend(validate_jsonl(artifact_dir / "trace.jsonl"))
+    errors.extend(validate_jsonl(trace_path))
     errors.extend(validate_jsonl(artifact_dir / "tdd_trace.jsonl"))
-    errors.extend(validate_trace_transactions(artifact_dir / "trace.jsonl"))
-    errors.extend(validate_transaction_digest_chain(artifact_dir / "trace.jsonl"))
-    errors.extend(validate_canonical_state_digests(artifact_dir))
-    errors.extend(validate_evidence_receipts(artifact_dir))
+    errors.extend(validate_trace_transactions(trace_path))
+    errors.extend(validate_transaction_digest_chain(trace_path))
+    errors.extend(validate_canonical_state_digests(artifact_dir, trace_path))
+    errors.extend(validate_evidence_receipts(artifact_dir, trace_path))
     errors.extend(validate_cross_file_invariants(artifact_dir / "run_state.json", artifact_dir / "acceptance_registry.json"))
     if not errors:
         state = load_object(artifact_dir / "run_state.json")
         registry = load_object(artifact_dir / "acceptance_registry.json")
         errors.extend(validate_active_tdd_gates(artifact_dir, state, registry))
+    return errors
+
+
+def validate_artifact(args: argparse.Namespace) -> int:
+    artifact_dir = args.artifact_dir.expanduser().resolve()
+    errors = artifact_validation_errors(artifact_dir)
     if errors:
         print(f"FAIL {artifact_dir}")
         for error in errors:
@@ -1323,9 +2263,47 @@ def build_parser() -> argparse.ArgumentParser:
     validate_parser.add_argument("artifact_dir", type=Path)
     validate_parser.set_defaults(handler=validate_artifact)
 
+    discover_parser = subparsers.add_parser("discover", help="Discover active Full Harness runs.")
+    discover_parser.add_argument("path", type=Path)
+    discover_parser.add_argument("--run", default="")
+    discover_parser.set_defaults(handler=discover_runs)
+
+    checkpoint_parser = subparsers.add_parser("checkpoint", help="Persist a resumable continuation checkpoint.")
+    checkpoint_parser.add_argument("path", type=Path)
+    checkpoint_parser.add_argument("--run", default="")
+    checkpoint_parser.add_argument("--runtime", required=True)
+    checkpoint_parser.add_argument("--actor-id", required=True)
+    checkpoint_parser.add_argument("--owner-epoch", type=int)
+    checkpoint_parser.add_argument("--current-task", default="")
+    checkpoint_parser.add_argument("--next-action", required=True)
+    checkpoint_parser.add_argument("--pending-verification", action="append", default=[])
+    checkpoint_parser.add_argument("--reason", required=True)
+    checkpoint_parser.set_defaults(handler=checkpoint_run)
+
+    handoff_parser = subparsers.add_parser("handoff", help="Mark a checkpoint ready for another runtime.")
+    handoff_parser.add_argument("path", type=Path)
+    handoff_parser.add_argument("--run", default="")
+    handoff_parser.add_argument("--actor-id", required=True)
+    handoff_parser.add_argument("--owner-epoch", type=int)
+    handoff_parser.add_argument("--next-action", required=True)
+    handoff_parser.add_argument("--pending-verification", action="append", default=[])
+    handoff_parser.add_argument("--reason", required=True)
+    handoff_parser.set_defaults(handler=handoff_run)
+
+    resume_parser = subparsers.add_parser("resume", help="Validate, recover, claim, and emit a resume packet.")
+    resume_parser.add_argument("path", type=Path)
+    resume_parser.add_argument("--run", default="")
+    resume_parser.add_argument("--runtime", required=True)
+    resume_parser.add_argument("--actor-id", required=True)
+    resume_parser.add_argument("--owner-epoch", type=int)
+    resume_parser.add_argument("--takeover-reason", default="")
+    resume_parser.set_defaults(handler=resume_run)
+
     seal_parser = subparsers.add_parser("seal", help="Authorize and bind pre-dispatch human-authored state.")
     seal_parser.add_argument("artifact_dir", type=Path)
     seal_parser.add_argument("--reason", required=True)
+    seal_parser.add_argument("--actor-id", default="")
+    seal_parser.add_argument("--owner-epoch", type=int)
     seal_parser.set_defaults(handler=seal_artifact)
 
     task_parser = subparsers.add_parser("task-set", help="Apply a guarded task status transition.")
@@ -1336,7 +2314,20 @@ def build_parser() -> argparse.ArgumentParser:
     task_parser.add_argument("--evidence-file", action="append", default=[])
     task_parser.add_argument("--stop-reason", default="")
     task_parser.add_argument("--no-test-reason", default="")
+    task_parser.add_argument("--actor-id", default="")
+    task_parser.add_argument("--owner-epoch", type=int)
     task_parser.set_defaults(handler=task_set)
+
+    task_refresh_parser = subparsers.add_parser(
+        "task-refresh", help="Replace receipts for files backing a completed task."
+    )
+    task_refresh_parser.add_argument("artifact_dir", type=Path)
+    task_refresh_parser.add_argument("--task-id", required=True)
+    task_refresh_parser.add_argument("--evidence-file", action="append", default=[])
+    task_refresh_parser.add_argument("--verification-tier", choices=VERIFICATION_TIERS, default="policy")
+    task_refresh_parser.add_argument("--actor-id", default="")
+    task_refresh_parser.add_argument("--owner-epoch", type=int)
+    task_refresh_parser.set_defaults(handler=task_refresh)
 
     acceptance_parser = subparsers.add_parser("acceptance-set", help="Apply a guarded acceptance status transition.")
     acceptance_parser.add_argument("artifact_dir", type=Path)
@@ -1348,7 +2339,20 @@ def build_parser() -> argparse.ArgumentParser:
     acceptance_parser.add_argument("--pass-algorithm", default="")
     acceptance_parser.add_argument("--blocking-issue", action="append", default=[])
     acceptance_parser.add_argument("--no-test-reason", default="")
+    acceptance_parser.add_argument("--actor-id", default="")
+    acceptance_parser.add_argument("--owner-epoch", type=int)
     acceptance_parser.set_defaults(handler=acceptance_set)
+
+    refresh_parser = subparsers.add_parser(
+        "acceptance-refresh", help="Replace receipts for files backing an accepted criterion."
+    )
+    refresh_parser.add_argument("artifact_dir", type=Path)
+    refresh_parser.add_argument("--criterion-id", required=True)
+    refresh_parser.add_argument("--evidence-file", action="append", default=[])
+    refresh_parser.add_argument("--verification-tier", choices=VERIFICATION_TIERS, default="policy")
+    refresh_parser.add_argument("--actor-id", default="")
+    refresh_parser.add_argument("--owner-epoch", type=int)
+    refresh_parser.set_defaults(handler=acceptance_refresh)
 
     run_parser = subparsers.add_parser("run-set", help="Apply a guarded top-level run transition.")
     run_parser.add_argument("artifact_dir", type=Path)
@@ -1357,6 +2361,8 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--evidence-file", action="append", default=[])
     run_parser.add_argument("--verification-tier", choices=VERIFICATION_TIERS, default="policy")
     run_parser.add_argument("--stop-reason", default="")
+    run_parser.add_argument("--actor-id", default="")
+    run_parser.add_argument("--owner-epoch", type=int)
     run_parser.set_defaults(handler=run_set)
 
     witness_parser = subparsers.add_parser("witness-set", help="Record independent state witness review evidence.")
@@ -1366,6 +2372,8 @@ def build_parser() -> argparse.ArgumentParser:
     witness_parser.add_argument("--verification-tier", choices=VERIFICATION_TIERS, default="policy")
     witness_parser.add_argument("--evidence-file", action="append", default=[])
     witness_parser.add_argument("--reason", default="")
+    witness_parser.add_argument("--actor-id", default="")
+    witness_parser.add_argument("--owner-epoch", type=int)
     witness_parser.set_defaults(handler=witness_set)
 
     dispatch_create_parser = subparsers.add_parser("dispatch-create", help="Persist a manager-owned worker dispatch.")
@@ -1381,6 +2389,8 @@ def build_parser() -> argparse.ArgumentParser:
     dispatch_create_parser.add_argument("--reasoning-effort", default="")
     dispatch_create_parser.add_argument("--route-reason", default="")
     dispatch_create_parser.add_argument("--escalation-count", type=int, default=0)
+    dispatch_create_parser.add_argument("--actor-id", default="")
+    dispatch_create_parser.add_argument("--owner-epoch", type=int)
     dispatch_create_parser.set_defaults(handler=dispatch_create)
 
     dispatch_update_parser = subparsers.add_parser("dispatch-update", help="Advance a persisted worker dispatch lifecycle.")
@@ -1388,10 +2398,14 @@ def build_parser() -> argparse.ArgumentParser:
     dispatch_update_parser.add_argument("--dispatch-id", required=True)
     dispatch_update_parser.add_argument("--status", required=True, choices=sorted(DISPATCH_STATUSES - {"dispatched"}))
     dispatch_update_parser.add_argument("--stop-reason", default="")
+    dispatch_update_parser.add_argument("--actor-id", default="")
+    dispatch_update_parser.add_argument("--owner-epoch", type=int)
     dispatch_update_parser.set_defaults(handler=dispatch_update)
 
     recover_parser = subparsers.add_parser("recover", help="Reconcile interrupted journaled transitions.")
     recover_parser.add_argument("artifact_dir", type=Path)
+    recover_parser.add_argument("--actor-id", default="")
+    recover_parser.add_argument("--owner-epoch", type=int)
     recover_parser.set_defaults(handler=recover_artifact)
     return parser
 
@@ -1402,7 +2416,7 @@ def main() -> int:
     try:
         return int(args.handler(args))
     except (OSError, ValueError, PermissionError) as exc:
-        print(f"ERROR {exc}")
+        print(f"ERROR {exc}", file=sys.stderr)
         return 2
 
 

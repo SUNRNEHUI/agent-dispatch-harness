@@ -50,7 +50,7 @@ def parse_args() -> argparse.Namespace:
         default=Path(__file__).resolve().parents[1],
         help="Repository root. Defaults to the parent of scripts/.",
     )
-    parser.add_argument("--date", default="2026-07-13", help="Release date to write with --fix.")
+    parser.add_argument("--date", default="2026-07-18", help="Release date to write with --fix.")
     parser.add_argument("--fix", action="store_true", help="Rewrite current-version references.")
     return parser.parse_args()
 

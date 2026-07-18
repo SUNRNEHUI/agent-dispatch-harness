@@ -13,7 +13,8 @@ from pathlib import Path
 from harness_schema import (
     ACCEPTANCE_STATUSES,
     AGENT_PROFILES,
-    CODEX_MODEL_PROFILES,
+    CONTINUATION_PROTOCOL,
+    CONTINUATION_STATUSES,
     DISPATCH_STATUSES,
     EVIDENCE_POLICY,
     MODES,
@@ -25,6 +26,7 @@ from harness_schema import (
     TASK_STATUSES,
     VERIFICATION_TIERS,
     VERIFICATION_GATE_MODES,
+    model_profiles_for,
 )
 from state_witness_check import validate as validate_state_witness
 
@@ -639,6 +641,90 @@ def validate_state_layers(value: object, prefix: str) -> list[str]:
     return errors
 
 
+def validate_continuation(value: object, prefix: str) -> list[str]:
+    if not isinstance(value, dict):
+        return [f"{prefix} must be an object"]
+
+    errors: list[str] = []
+    if value.get("protocol") != CONTINUATION_PROTOCOL:
+        errors.append(f"{prefix}.protocol must be {CONTINUATION_PROTOCOL!r}")
+    status = value.get("status")
+    if status not in CONTINUATION_STATUSES:
+        errors.append(f"{prefix}.status has unsupported status {status!r}")
+
+    owner = value.get("owner")
+    if not isinstance(owner, dict):
+        errors.append(f"{prefix}.owner must be an object")
+        owner = {}
+    for key in ("actor_id", "runtime", "claimed_at"):
+        if not isinstance(owner.get(key), str):
+            errors.append(f"{prefix}.owner.{key} must be a string")
+    epoch = owner.get("epoch")
+    if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 0:
+        errors.append(f"{prefix}.owner.epoch must be a non-negative integer")
+    if status in {"active", "ready"}:
+        for key in ("actor_id", "runtime", "claimed_at"):
+            if not str(owner.get(key) or "").strip():
+                errors.append(f"{prefix}.owner.{key} must not be empty for status {status}")
+        if not isinstance(epoch, int) or epoch < 1:
+            errors.append(f"{prefix}.owner.epoch must be positive for status {status}")
+
+    previous_owner = value.get("previous_owner")
+    if not isinstance(previous_owner, dict):
+        errors.append(f"{prefix}.previous_owner must be an object")
+    takeover_count = value.get("takeover_count")
+    if not isinstance(takeover_count, int) or isinstance(takeover_count, bool) or takeover_count < 0:
+        errors.append(f"{prefix}.takeover_count must be a non-negative integer")
+
+    checkpoint = value.get("checkpoint")
+    if not isinstance(checkpoint, dict):
+        errors.append(f"{prefix}.checkpoint must be an object")
+        checkpoint = {}
+    for key in ("id", "checkpointed_at", "actor_id", "runtime", "reason", "current_task", "next_action"):
+        if not isinstance(checkpoint.get(key), str):
+            errors.append(f"{prefix}.checkpoint.{key} must be a string")
+    sequence = checkpoint.get("sequence")
+    if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 0:
+        errors.append(f"{prefix}.checkpoint.sequence must be a non-negative integer")
+    if not str(checkpoint.get("next_action") or "").strip():
+        errors.append(f"{prefix}.checkpoint.next_action must not be empty")
+    if not isinstance(checkpoint.get("pending_verification"), list):
+        errors.append(f"{prefix}.checkpoint.pending_verification must be a list")
+    repository = checkpoint.get("repository")
+    if not isinstance(repository, dict):
+        errors.append(f"{prefix}.checkpoint.repository must be an object")
+    else:
+        for key in ("root", "cwd", "branch", "head"):
+            if not isinstance(repository.get(key), str):
+                errors.append(f"{prefix}.checkpoint.repository.{key} must be a string")
+        dirty_paths = repository.get("dirty_paths")
+        if not isinstance(dirty_paths, list) or not all(isinstance(item, str) for item in dirty_paths):
+            errors.append(f"{prefix}.checkpoint.repository.dirty_paths must be a string list")
+        dirty_entries = repository.get("dirty_entries")
+        if dirty_entries is not None and (
+            not isinstance(dirty_entries, dict)
+            or not all(
+                isinstance(key, str) and isinstance(item, str)
+                for key, item in dirty_entries.items()
+            )
+        ):
+            errors.append(f"{prefix}.checkpoint.repository.dirty_entries must be a string map")
+        worktree_digest = repository.get("worktree_digest")
+        if worktree_digest is not None and not isinstance(worktree_digest, str):
+            errors.append(f"{prefix}.checkpoint.repository.worktree_digest must be a string")
+
+    last_resume = value.get("last_resume")
+    if not isinstance(last_resume, dict):
+        errors.append(f"{prefix}.last_resume must be an object")
+    else:
+        for key in ("resumed_at", "actor_id", "runtime", "takeover_reason"):
+            if not isinstance(last_resume.get(key), str):
+                errors.append(f"{prefix}.last_resume.{key} must be a string")
+        if not isinstance(last_resume.get("forced"), bool):
+            errors.append(f"{prefix}.last_resume.forced must be a boolean")
+    return errors
+
+
 def validate_state_witness_record(value: object, prefix: str, run_state_path: Path, run_status: object) -> list[str]:
     if not isinstance(value, dict):
         return [f"{prefix} must be an object"]
@@ -833,6 +919,8 @@ def validate_run_state(path: Path) -> list[str]:
         errors.extend(validate_state_layers(state_layers, f"{path.name}: state_layers"))
     else:
         errors.append(f"{path.name}: missing state_layers")
+    if "continuation" in data:
+        errors.extend(validate_continuation(data["continuation"], f"{path.name}: continuation"))
 
     stages = data.get("stages")
     tasks = data.get("tasks")
@@ -954,13 +1042,15 @@ def validate_run_state(path: Path) -> list[str]:
                     errors.append(f"{prefix}.runtime must be lowercase")
                 if not str(item.get("route_reason") or "").strip():
                     errors.append(f"{prefix}.route_reason must not be empty")
-                if runtime.casefold() == "codex" and isinstance(profile, str) and profile in CODEX_MODEL_PROFILES:
-                    configured = CODEX_MODEL_PROFILES[profile]
+                sealed_profiles = model_profiles_for(runtime)
+                if sealed_profiles is not None and isinstance(profile, str) and profile in sealed_profiles:
+                    configured = sealed_profiles[profile]
+                    runtime_label = runtime.casefold()
                     if item.get("requested_model") != configured["model"]:
-                        errors.append(f"{prefix}.requested_model must match Codex profile {profile!r}")
+                        errors.append(f"{prefix}.requested_model must match {runtime_label} profile {profile!r}")
                     if item.get("reasoning_effort") != configured["reasoning_effort"]:
-                        errors.append(f"{prefix}.reasoning_effort must match Codex profile {profile!r}")
-                    if "terra" in str(item.get("resolved_model") or "").casefold():
+                        errors.append(f"{prefix}.reasoning_effort must match {runtime_label} profile {profile!r}")
+                    if runtime_label == "codex" and "terra" in str(item.get("resolved_model") or "").casefold():
                         errors.append(f"{prefix}.resolved_model must not use disabled Terra models")
             if not str(item.get("worker_id") or "").strip():
                 errors.append(f"{prefix}.worker_id must not be empty")

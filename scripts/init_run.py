@@ -11,7 +11,13 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timezone
 
-from harness_schema import EVIDENCE_POLICY, MODEL_ROUTING_POLICY, SCHEMA_VERSION, VERIFICATION_TIERS
+from harness_schema import (
+    CONTINUATION_PROTOCOL,
+    EVIDENCE_POLICY,
+    MODEL_ROUTING_POLICY,
+    SCHEMA_VERSION,
+    VERIFICATION_TIERS,
+)
 
 
 TEMPLATE_MAP = {
@@ -111,6 +117,65 @@ def default_state_witness(required: bool, tier: str) -> dict[str, object]:
         "review_evidence": [],
         "sealed_digest": "",
         "reviewed_at": "",
+    }
+
+
+def default_continuation(
+    tasks: list[dict[str, object]],
+    *,
+    project_root: Path,
+    created_at: str,
+) -> dict[str, object]:
+    first = next(
+        (task for task in tasks if task.get("status") in {"ready", "planned"}),
+        None,
+    )
+    task_id = str(first.get("id") or "") if first else ""
+    task_name = str(first.get("name") or "") if first else ""
+    task_path = str(first.get("task_path") or "") if first else ""
+    next_action = (
+        f"Read {task_path} and complete task {task_id}: {task_name}"
+        if task_id and task_path
+        else "Inspect task_spec.md and define the next ready task"
+    )
+    return {
+        "protocol": CONTINUATION_PROTOCOL,
+        "status": "unclaimed",
+        "owner": {
+            "actor_id": "",
+            "runtime": "",
+            "epoch": 0,
+            "claimed_at": "",
+        },
+        "previous_owner": {},
+        "takeover_count": 0,
+        "checkpoint": {
+            "id": "",
+            "sequence": 0,
+            "checkpointed_at": created_at,
+            "actor_id": "",
+            "runtime": "",
+            "reason": "run initialized",
+            "current_task": task_id,
+            "next_action": next_action,
+            "pending_verification": [],
+            "repository": {
+                "root": str(project_root),
+                "cwd": str(project_root),
+                "branch": "",
+                "head": "",
+                "dirty_paths": [],
+                "dirty_entries": {},
+                "worktree_digest": "",
+            },
+        },
+        "last_resume": {
+            "resumed_at": "",
+            "actor_id": "",
+            "runtime": "",
+            "takeover_reason": "",
+            "forced": False,
+        },
     }
 
 
@@ -468,6 +533,11 @@ def main() -> int:
                 "trace_path": "trace.jsonl",
                 "tdd_trace_path": "tdd_trace.jsonl",
                 "state_layers": full_state_layers,
+                "continuation": default_continuation(
+                    task_items,
+                    project_root=project_root,
+                    created_at=now,
+                ),
                 "state_witness": default_state_witness(
                     args.with_state_witness,
                     args.required_verification_tier,

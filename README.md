@@ -1,10 +1,10 @@
-# Agent Dispatch Harness
+# Agent Reliability Harness
 
 [简体中文](README.zh-CN.md) | English
 
-Agent Dispatch Harness, formerly Multi-Agent Dispatcher, is an agent skill for routing explicit multi-agent requests into the smallest execution mode that can complete the work reliably. It avoids unnecessary delegation for small tasks and provides a durable harness for long, risky, resumable, evidence-verified work.
+Agent Reliability Harness, formerly Agent Dispatch Harness and Multi-Agent Dispatcher, is an agent skill for routing explicit multi-agent requests into the smallest execution mode that can complete the work reliably. It avoids unnecessary delegation for small tasks and provides a durable harness for long, risky, resumable, evidence-verified work.
 
-Current version: **v7.2.0** · 2026-07-15
+Current version: **v7.4.0** · 2026-07-18
 
 ---
 
@@ -27,9 +27,10 @@ Sub-agents are used only for bounded execution, investigation, review, or evalua
 ## Core Capabilities
 
 - **Mode selection:** choose Direct, Lite, or Full execution before creating workers or artifacts.
-- **GPT-5.6-aware routing:** prefer Luna/low for simple Codex sub-agents, escalate by role and context, and record fallback when model controls are unavailable.
+- **Cross-runtime model routing:** keep portable profiles while sealing separate Codex and Grok model maps and truthful fallbacks.
 - **Selective delegation:** dispatch sub-agents only when the task has clean ownership boundaries.
 - **Durable state:** preserve task state for long or resumable work under a project workspace directory.
+- **Automatic continuation:** let a replacement Codex or Grok session discover, recover, validate, and atomically claim the unique active Full run from the project root.
 - **Runtime TDD evidence:** distinguish strict TDD, test-first evidence, substitute verification, and non-applicable work with wrapper-generated trace and optional filesystem mtime checks.
 - **Evidence-based acceptance:** require tests, build output, logs, browser checks, screenshots, CI, readback, or evaluator reports before completion.
 - **Runtime adapters:** map the same protocol to Codex, Claude Code, or similar coding-agent environments.
@@ -152,6 +153,27 @@ Trace records the minimum durable evidence needed to resume and audit a run:
 
 Chat history is not treated as durable task state.
 
+### 7. Cross-Runtime Continuation
+
+A replacement runtime starts from the project root, not from an artifact path or old chat:
+
+```bash
+python3 <skill-dir>/scripts/harnessctl.py resume . \
+  --runtime grok --actor-id <unique-session-id> \
+  --takeover-reason "previous Codex session interrupted"
+```
+
+`resume` discovers exactly one active Full run, recovers incomplete transactions, validates
+the complete artifact, transfers ownership under a lock, and returns required reads, active
+tasks, blockers, explicit next action, pending verification, owner epoch, and repository
+drift. All later mutations carry that actor ID and epoch; stale sessions fail closed.
+
+Checkpoint after verified boundaries and before likely interruption. A clean source runtime
+may run `handoff`; an abrupt replacement uses a takeover reason. This transfers durable
+observable state, not hidden reasoning, provider session internals, secrets, or in-flight
+external side effects. The harness does not receive quota callbacks; automatic takeover
+begins when the replacement runtime is launched and runs `resume`.
+
 ---
 
 ## Installation
@@ -159,8 +181,8 @@ Chat history is not treated as durable task state.
 Clone the repository:
 
 ```bash
-git clone https://github.com/SUNRNEHUI/agent-dispatch-harness.git
-cd agent-dispatch-harness
+git clone https://github.com/SUNRNEHUI/agent-reliability-harness.git
+cd agent-reliability-harness
 ```
 
 Create a clean runtime package:
@@ -168,15 +190,15 @@ Create a clean runtime package:
 ```bash
 python3 scripts/sync_version.py
 python3 scripts/package_skill.py --verify-source
-python3 scripts/package_skill.py --output /tmp/agent-dispatch-harness-runtime --force
+python3 scripts/package_skill.py --output /tmp/agent-reliability-harness-runtime --force
 ```
 
 Install the runtime package into Codex:
 
 ```bash
-mkdir -p ~/.codex/skills/agent-dispatch-harness
-rsync -a --delete /tmp/agent-dispatch-harness-runtime/ ~/.codex/skills/agent-dispatch-harness/
-python3 scripts/package_skill.py --check ~/.codex/skills/agent-dispatch-harness
+mkdir -p ~/.codex/skills/agent-reliability-harness
+rsync -a --delete /tmp/agent-reliability-harness-runtime/ ~/.codex/skills/agent-reliability-harness/
+python3 scripts/package_skill.py --check ~/.codex/skills/agent-reliability-harness
 ```
 
 The runtime package contains only the files needed by the skill at execution time.
@@ -185,12 +207,12 @@ The runtime package contains only the files needed by the skill at execution tim
 
 ## Migration From Earlier Names
 
-Earlier releases used `multi-agent-dispatcher` as the public package name, and some local installs used `multi-agent-orchestrator` as the Codex skill directory. New installs should use `agent-dispatch-harness`.
+Earlier releases used Agent Dispatch Harness as the public project and runtime name; older releases used `multi-agent-dispatcher` and some local installs used `multi-agent-orchestrator`. New installs should use `agent-reliability-harness`.
 
 When upgrading an existing local install, install the new runtime directory first, then remove old local runtime folders if they are still present and no longer needed:
 
 ```bash
-rm -rf ~/.codex/skills/multi-agent-dispatcher ~/.codex/skills/multi-agent-orchestrator
+rm -rf ~/.codex/skills/agent-dispatch-harness ~/.codex/skills/multi-agent-dispatcher ~/.codex/skills/multi-agent-orchestrator
 ```
 
 This avoids duplicate skill entries that describe the same workflow.
@@ -345,7 +367,7 @@ python3 scripts/status.py <artifact-dir>/run_state.json --require-high-confidenc
 ## Repository Layout
 
 ```text
-agent-dispatch-harness/
+agent-reliability-harness/
 ├── SKILL.md
 ├── README.md
 ├── README.zh-CN.md
@@ -367,6 +389,7 @@ Detailed protocol material lives in `references/`. Runtime-specific guidance liv
 The protocol is runtime-neutral. Adapters describe how to apply it in specific agent environments:
 
 - [Codex adapter](adapters/codex.md)
+- [Grok adapter](adapters/grok.md)
 - [Claude Code adapter](adapters/claude-code.md)
 - [Harness protocol reference](references/harness-protocol.md)
 
@@ -378,12 +401,12 @@ Adapters do not change the protocol. They map the same gates, artifacts, evidenc
 
 This project is independent and does not require Superpowers to run.
 
-The design is influenced by [obra/superpowers](https://github.com/obra/superpowers), a software development methodology by Jesse Vincent. Agent Dispatch Harness adopts compatible engineering patterns such as test-first evidence, fresh-context sub-agents, review gates, worktree isolation, and verification before completion.
+The design is influenced by [obra/superpowers](https://github.com/obra/superpowers), a software development methodology by Jesse Vincent. Agent Reliability Harness adopts compatible engineering patterns such as test-first evidence, fresh-context sub-agents, review gates, worktree isolation, and verification before completion.
 
 The project does not copy Superpowers skill bodies and does not require the Superpowers plugin. The relationship is:
 
 ```text
-agent-dispatch-harness = routing and harness authority
+agent-reliability-harness = routing and harness authority
 Superpowers-style methods = optional supporting engineering practices
 ```
 
@@ -393,11 +416,27 @@ Mode selection always runs first. Supporting methods are applied only when they 
 
 ## Release History
 
+### v7.4.0
+
+- Added unique-active-run discovery, transaction recovery, atomic cross-runtime ownership transfer, complete resume packets, explicit checkpoint/handoff commands, and legacy Full artifact upgrade.
+- Added actor-plus-epoch fencing, fail-closed ambiguity/corruption handling, repository content drift detection, and continuation status output.
+- Brought the existing v7.3 Grok model routing and evidence refresh commands back into source, then aligned Codex/Grok/universal adapters and package contents.
+
+### v7.3.0
+
+- Added sealed Grok model profiles, deterministic `--runtime grok` routing, a Grok adapter, and opt-in cheaper-model configuration without inventing unavailable defaults.
+- Added `task-refresh` and `acceptance-refresh` for transactionally replacing stale artifact receipts by path.
+
 ### v7.2.0
 
 - Added a Production State Witness contract for state/UI/async/concurrency work, including source locators, reachable truth-table rows, observed-before/expected-after values, and preserved blocking cases.
 - Enforced the witness at runtime: invalid stateful artifacts cannot seal, dispatch, validate, or reach protected acceptance; independent review evidence must meet the configured policy/flow/user-visible tier.
 - Added `witness-set`, sealed witness digests, sealed-baseline dispatch checks, adversarial pressure tests, and source/install package drift checks.
+
+### v7.0.0
+
+- Rebranded the project and runtime skill as Agent Reliability Harness.
+- Reworked the public README and runtime metadata around policy-driven, proportional, evidence-based execution.
 
 ### v5.11.0
 

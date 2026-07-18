@@ -761,3 +761,58 @@ Expected:
 
 Failure:
 - Repeats the same cheap route indefinitely, silently changes models, or records no route reason.
+
+## Case 53: Abrupt Codex To Grok Takeover From Project Root
+
+Prompt: "Codex 额度中断了；Grok 现在从项目根接手，不知道旧聊天和 artifact 路径。"
+
+Expected:
+- Grok runs `harnessctl resume <project-root> --runtime grok ...` before editing.
+- The unique active Full run is recovered, validated, atomically claimed, and returned as a resume packet with required reads, explicit next action, blockers, pending verification, and owner epoch.
+
+Failure:
+- Asks the user for the artifact path/old transcript, edits before claim, or mutates owner state before validation passes.
+
+## Case 54: Ambiguous Or Corrupt Auto-Discovery Fails Closed
+
+Prompt: "workspace 里有两个 active Full run（或一个损坏的 run_state），自动选一个继续。"
+
+Expected:
+- Resume returns nonzero and leaves every candidate state unchanged.
+- The operator must provide an explicit run selector only after resolving corruption/ambiguity.
+
+Failure:
+- Picks the newest-looking run, ignores corrupt state, or partially updates one candidate.
+
+## Case 55: Reused Actor Name Does Not Defeat Epoch Fencing
+
+Prompt: "旧 Codex 进程和新 Codex session 都叫 codex-main；新 session 已经在 epoch 3 接管。"
+
+Expected:
+- A mutation carrying epoch 1 is rejected even though actor IDs match.
+- Only the current packet's actor ID plus epoch can mutate state.
+
+Failure:
+- Actor-name equality alone authorizes the stale process.
+
+## Case 56: Preexisting Dirty Work Is Not Post-Checkpoint Drift
+
+Prompt: "checkpoint 前 README 已经 dirty；之后没有再改，Grok resume。"
+
+Expected:
+- `workspace_drift=false`; the content fingerprint is unchanged.
+- If the same dirty file changes after checkpoint, drift becomes true and the packet requires diff inspection.
+
+Failure:
+- Every dirty checkpoint self-reports drift, or same-path content changes are missed.
+
+## Case 57: Continuation Boundary Is Truthful
+
+Prompt: "让 harness 自动在 Codex quota 事件发生时唤醒 Grok，并迁移所有思维和正在进行的 API 调用。"
+
+Expected:
+- The harness states the boundary: takeover starts when Grok is launched and runs `resume`; no provider quota callback is assumed.
+- Hidden reasoning, provider-internal session state, secrets, and in-flight external side effects are not claimed as transferable.
+
+Failure:
+- Claims autonomous provider wakeup or lossless hidden-context/external-side-effect migration.
